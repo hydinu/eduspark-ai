@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { aiSuggestCourses } from "@/server/ai.functions";
 import { fetchYouTubeVideos, YouTubeVideo } from "@/lib/youtube-api";
 import { NotesModal } from "@/components/NotesModal";
+import { WebResourceCard, WebResource } from "@/components/WebResourceCard";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -15,8 +14,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/AppShell";
-import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2, FileText } from "lucide-react";
+import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 export const Route = createFileRoute("/_app/courses")({
   component: CoursesPage,
@@ -37,7 +38,9 @@ function CoursesPage() {
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [results, setResults] = useState<YouTubeVideo[]>([]);
+  const [webResources, setWebResources] = useState<WebResource[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<{url: string, title: string} | null>(null);
+  const [activeTab, setActiveTab] = useState<"videos" | "articles">("videos");
 
   const { data: saved } = useQuery({
     queryKey: ["course-progress", user?.id],
@@ -49,8 +52,26 @@ function CoursesPage() {
   });
 
   const suggest = useMutation({
-    mutationFn: async () => fetchYouTubeVideos(topic.trim()),
-    onSuccess: (r) => { setResults(r.videos); if (r.videos.length === 0) toast.info("No suggestions, try another topic."); },
+    mutationFn: async () => {
+      // Fetch YouTube videos and web resources in parallel
+      const [ytResult, webResult] = await Promise.allSettled([
+        fetchYouTubeVideos(topic.trim()),
+        fetch(`${BACKEND_URL}/api/web-resources?topic=${encodeURIComponent(topic.trim())}`)
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(d => d.resources as WebResource[])
+          .catch(() => [] as WebResource[]),
+      ]);
+      return {
+        videos: ytResult.status === "fulfilled" ? ytResult.value.videos : [],
+        webResources: webResult.status === "fulfilled" ? webResult.value : [],
+      };
+    },
+    onSuccess: (r) => {
+      setResults(r.videos);
+      setWebResources(r.webResources);
+      if (r.videos.length === 0 && r.webResources.length === 0) toast.info("No results, try another topic.");
+      if (r.videos.length > 0) setActiveTab("videos");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -120,53 +141,84 @@ function CoursesPage() {
         </div>
       </Card>
 
-      {results.length > 0 && (
+      {(results.length > 0 || webResources.length > 0) && (
         <div className="mb-10">
-          <h2 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wider">Suggestions for "{topic}"</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {results.map((r, i) => (
-              <Card key={i} className="p-5 hover:shadow-soft transition-shadow flex flex-col">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="font-semibold leading-snug">{r.title}</h3>
-                  <Badge variant="secondary" className="shrink-0">Video</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{r.description || r.ai_content?.summary}</p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {r.ai_content?.key_concepts?.slice(0, 3).map(concept => (
-                    <Badge key={concept} variant="outline" className="text-[10px]">{concept}</Badge>
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setActiveTab("videos")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "videos" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <Youtube className="h-3.5 w-3.5" />
+              YouTube Videos {results.length > 0 && `(${results.length})`}
+            </button>
+            <button
+              onClick={() => setActiveTab("articles")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "articles" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              Web Articles {webResources.length > 0 && `(${webResources.length})`}
+            </button>
+          </div>
+
+          {/* YouTube Videos Tab */}
+          {activeTab === "videos" && results.length > 0 && (
+            <div className="grid md:grid-cols-2 gap-4">
+              {results.map((r, i) => (
+                <Card key={i} className="p-5 hover:shadow-soft transition-shadow flex flex-col">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <h3 className="font-semibold leading-snug">{r.title}</h3>
+                    <Badge variant="secondary" className="shrink-0">Video</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{r.description || r.ai_content?.summary}</p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {r.ai_content?.key_concepts?.slice(0, 3).map(concept => (
+                      <Badge key={concept} variant="outline" className="text-[10px]">{concept}</Badge>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
+                    <span>{r.channel}</span>
+                    {formatViews(r.view_count) && <><span>•</span><span>{formatViews(r.view_count)}</span></>}
+                    {r.duration && <><span>•</span><span>{r.duration}</span></>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" asChild className="flex-1 min-w-[80px]">
+                      <a href={r.link} target="_blank" rel="noopener noreferrer">
+                        <Youtube className="h-3.5 w-3.5 mr-1.5" /> Watch
+                      </a>
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setSelectedVideo({ url: r.link, title: r.title })} className="flex-1 min-w-[80px]">
+                      <FileText className="h-3.5 w-3.5 mr-1.5" /> Notes
+                    </Button>
+                    <Button size="sm" onClick={() => bookmark(r)} className="flex-1 min-w-[80px]">
+                      <Bookmark className="h-3.5 w-3.5 mr-1.5" /> Save
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Web Articles Tab */}
+          {activeTab === "articles" && (
+            <div>
+              {webResources.length === 0 ? (
+                <Card className="p-8 text-center text-muted-foreground">
+                  <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No web articles found. Make sure the Python backend is running.</p>
+                </Card>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {webResources.map((r, i) => (
+                    <WebResourceCard key={r.url} resource={r} index={i} />
                   ))}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
-                  <span>{r.channel}</span>
-                  {formatViews(r.view_count) && <><span>•</span><span>{formatViews(r.view_count)}</span></>}
-                  {r.duration && <><span>•</span><span>{r.duration}</span></>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    asChild
-                    className="flex-1 min-w-[80px]"
-                  >
-                    <a href={r.link} target="_blank" rel="noopener noreferrer">
-                      <Youtube className="h-3.5 w-3.5 mr-1.5" /> Watch
-                    </a>
-                  </Button>
-                  <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    onClick={() => setSelectedVideo({ url: r.link, title: r.title })} 
-                    className="flex-1 min-w-[80px]"
-                  >
-                    <FileText className="h-3.5 w-3.5 mr-1.5" /> Notes
-                  </Button>
-                  <Button size="sm" onClick={() => bookmark(r)} className="flex-1 min-w-[80px]">
-                    <Bookmark className="h-3.5 w-3.5 mr-1.5" /> Save
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

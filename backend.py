@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
@@ -326,6 +327,71 @@ def generate_notes(body: NotesRequest):
             ),
         }],
     }
+
+# ── Web Resource Routes ────────────────────────────────────────────────────────
+
+@app.get("/api/web-resources")
+def web_resources(topic: str = Query(..., min_length=1)):
+    """
+    Search DuckDuckGo for educational web articles about a topic
+    across GeeksForGeeks, freeCodeCamp, MDN, W3Schools, etc.
+    """
+    results = search_duckduckgo(topic, num_results=8)
+    if not results:
+        # Fallback: return curated links for well-known sites
+        from urllib.parse import quote
+        q = quote(topic)
+        results = [
+            {"title": f"{topic} - GeeksForGeeks", "url": f"https://www.geeksforgeeks.org/?s={q}",
+             "site": "geeksforgeeks.org", "site_label": "GeeksForGeeks",
+             "snippet": f"Comprehensive articles on {topic}",
+             "favicon": "https://www.google.com/s2/favicons?domain=geeksforgeeks.org&sz=32"},
+            {"title": f"{topic} - freeCodeCamp", "url": f"https://www.freecodecamp.org/news/search/?query={q}",
+             "site": "freecodecamp.org", "site_label": "freeCodeCamp",
+             "snippet": f"Free tutorials and articles on {topic}",
+             "favicon": "https://www.google.com/s2/favicons?domain=freecodecamp.org&sz=32"},
+            {"title": f"{topic} - MDN Web Docs", "url": f"https://developer.mozilla.org/en-US/search?q={q}",
+             "site": "developer.mozilla.org", "site_label": "MDN Web Docs",
+             "snippet": f"Official web documentation for {topic}",
+             "favicon": "https://www.google.com/s2/favicons?domain=developer.mozilla.org&sz=32"},
+        ]
+    return {"topic": topic, "resources": results}
+
+
+class WebNotesRequest(BaseModel):
+    url: str
+    title: str = ""
+
+
+@app.post("/api/web-page-notes")
+def web_page_notes(body: WebNotesRequest):
+    """
+    1. Use Playwright to fetch full rendered content from the URL.
+    2. Use Groq Llama 3 to generate structured timestamped notes.
+    3. Return notes in the same format as video notes (for PDF download).
+    """
+    if not body.url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid URL")
+
+    # Step 1: Extract content
+    print(f"[web] Extracting content from: {body.url}")
+    content = extract_page_content(body.url)
+
+    if not content or len(content.strip()) < 100:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not extract enough content from this page. It may require login or be paywalled."
+        )
+
+    # Step 2: Generate notes
+    if not GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="GROQ_API_KEY not configured. Add it to .env for web notes generation."
+        )
+
+    title = body.title or body.url
+    return generate_web_notes(content, title, body.url, call_groq)
 
 
 # ── Port management & startup ─────────────────────────────────────────────────
