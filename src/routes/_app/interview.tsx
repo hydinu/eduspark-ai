@@ -65,15 +65,17 @@ function InterviewPage() {
     mutationFn: async () => finishFn({ data: { role_topic: roleTopic, transcript } }),
     onSuccess: async (r) => {
       setFeedback({ score: r.score, markdown: r.feedback_markdown });
-      await supabase.from("interview_sessions").insert({
-        user_id: user!.id,
-        role_topic: roleTopic,
-        transcript: transcript as any,
-        feedback: r.feedback_markdown,
-        score: r.score,
-      });
-      qc.invalidateQueries({ queryKey: ["interviews"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      if (user) {
+        await supabase.from("interview_sessions").insert({
+          user_id: user.id,
+          role_topic: roleTopic,
+          transcript: transcript as any,
+          feedback: r.feedback_markdown,
+          score: r.score,
+        });
+        qc.invalidateQueries({ queryKey: ["interviews"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

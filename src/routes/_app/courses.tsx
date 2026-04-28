@@ -48,8 +48,9 @@ function CoursesPage() {
   });
 
   async function bookmark(r: YouTubeVideo) {
+    if (!user) { toast.info("Sign in to save courses"); return; }
     const { error } = await supabase.from("course_progress").insert({
-      user_id: user!.id,
+      user_id: user.id,
       course_title: r.title,
       course_url: r.link,
       source: r.channel,

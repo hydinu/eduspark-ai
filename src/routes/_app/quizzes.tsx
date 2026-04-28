@@ -44,11 +44,15 @@ function QuizPage() {
     mutationFn: async () => genFn({ data: { topic: topic.trim(), difficulty, count: parseInt(count, 10) } }),
     onSuccess: async (r) => {
       if (!r.questions?.length) { toast.error("Couldn't generate questions, try a different topic."); return; }
-      const { data, error } = await supabase.from("quizzes").insert({
-        user_id: user!.id, topic: topic.trim(), difficulty, questions: r.questions as any,
-      }).select().single();
-      if (error) { toast.error(error.message); return; }
-      setQuiz({ id: data.id, topic: topic.trim(), questions: r.questions });
+      if (user) {
+        const { data, error } = await supabase.from("quizzes").insert({
+          user_id: user.id, topic: topic.trim(), difficulty, questions: r.questions as any,
+        }).select().single();
+        if (error) { toast.error(error.message); return; }
+        setQuiz({ id: data.id, topic: topic.trim(), questions: r.questions });
+      } else {
+        setQuiz({ topic: topic.trim(), questions: r.questions });
+      }
       setAnswers({});
       setSubmitted(false);
     },
@@ -56,7 +60,7 @@ function QuizPage() {
   });
 
   async function submit() {
-    if (!quiz?.id) return;
+    if (!quiz?.id) { setSubmitted(true); return; } // guest mode: just show results
     const score = quiz.questions.reduce((acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0), 0);
     setSubmitted(true);
     const { error } = await supabase.from("quiz_attempts").insert({

@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
@@ -53,7 +52,6 @@ const chatSchema = z.object({
 });
 
 export const aiChat = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => chatSchema.parse(d))
   .handler(async ({ data }) => {
     const sys = {
@@ -75,7 +73,6 @@ const suggestSchema = z.object({
 });
 
 export const aiSuggestCourses = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => suggestSchema.parse(d))
   .handler(async ({ data }) => {
     const result = await callGateway({
@@ -130,7 +127,6 @@ const quizSchema = z.object({
 });
 
 export const aiGenerateQuiz = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => quizSchema.parse(d))
   .handler(async ({ data }) => {
     const result = await callGateway({
@@ -180,7 +176,6 @@ const interviewStartSchema = z.object({
 });
 
 export const aiInterviewStart = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => interviewStartSchema.parse(d))
   .handler(async ({ data }) => {
     const result = await callGateway({
@@ -202,7 +197,6 @@ const interviewTurnSchema = z.object({
 });
 
 export const aiInterviewTurn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => interviewTurnSchema.parse(d))
   .handler(async ({ data }) => {
     const messages = [
@@ -231,7 +225,6 @@ const notesSchema = z.object({
 });
 
 export const aiGenerateVideoNotes = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => notesSchema.parse(d))
   .handler(async ({ data }) => {
     const prompt = `You are an expert study notes generator. Based on the YouTube video titled "${data.video_title}" (${data.video_url}), create comprehensive timestamped study notes.
@@ -277,7 +270,6 @@ Return ONLY valid JSON in this exact format (no markdown, no extra text):
   });
 
 export const aiInterviewFinish = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => interviewFinishSchema.parse(d))
   .handler(async ({ data }) => {
     const transcriptText = data.transcript.map((t) => `${t.role === "interviewer" ? "Interviewer" : "Candidate"}: ${t.content}`).join("\n\n");

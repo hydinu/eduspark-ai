@@ -56,20 +56,28 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="p-4 border-t border-sidebar-border">
           <div className="flex items-center gap-3 px-2 py-2">
             <div className="h-9 w-9 rounded-full bg-gradient-primary flex items-center justify-center text-primary-foreground font-semibold text-sm">
-              {(user?.email?.[0] ?? "?").toUpperCase()}
+              {(user?.email?.[0] ?? "G").toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user?.email}</p>
-              <p className="text-xs text-muted-foreground">Student</p>
+              <p className="text-sm font-medium truncate">{user?.email ?? "Guest"}</p>
+              <p className="text-xs text-muted-foreground">{user ? "Student" : "Not signed in"}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={async () => { await signOut(); nav2({ to: "/" }); }}
-              aria-label="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
+            {user ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={async () => { await signOut(); nav2({ to: "/" }); }}
+                aria-label="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Link to="/auth">
+                <Button variant="ghost" size="sm" className="text-xs px-2">
+                  Sign in
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </aside>
