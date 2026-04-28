@@ -28,32 +28,81 @@ const SUGGESTIONS = [
 
 function ChatPage() {
   const chat = useServerFn(aiChat);
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [voiceMode, setVoiceMode] = useState(false);
-  const { isListening, isSpeaking, supported, startListening, stopListening, speak, stopSpeaking, transcript, resetTranscript } = useSpeech();
+  const { isListening, supported, startListening, stopListening, speak, stopSpeaking, transcript, resetTranscript } = useSpeech();
 
   useEffect(() => {
     if (transcript) {
-      setInput((prev) => {
-        // Only update if it's different to avoid overriding manual typing unnecessarily
-        if (!prev.endsWith(transcript)) {
-          return transcript;
-        }
-        return prev;
-      });
+      setInput((prev) => (!prev.endsWith(transcript) ? transcript : prev));
     }
   }, [transcript]);
 
+  // Load most recent conversation on mount
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data: convs } = await supabase
+        .from("chat_conversations")
+        .select("id")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (convs && convs.length > 0) {
+        const cid = convs[0].id;
+        setConversationId(cid);
+        const { data: msgs } = await supabase
+          .from("chat_messages")
+          .select("role, content")
+          .eq("conversation_id", cid)
+          .order("created_at", { ascending: true });
+        if (msgs) setMessages(msgs.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
+      }
+    })();
+  }, [user]);
+
+  async function ensureConversation(firstUserMsg: string): Promise<string | null> {
+    if (conversationId) return conversationId;
+    if (!user) return null;
+    const title = firstUserMsg.slice(0, 60);
+    const { data, error } = await supabase
+      .from("chat_conversations")
+      .insert({ user_id: user.id, title })
+      .select("id")
+      .single();
+    if (error || !data) return null;
+    setConversationId(data.id);
+    return data.id;
+  }
+
+  async function persistMessage(cid: string, role: "user" | "assistant", content: string) {
+    if (!user) return;
+    await supabase.from("chat_messages").insert({
+      conversation_id: cid,
+      user_id: user.id,
+      role,
+      content,
+    });
+    await supabase
+      .from("chat_conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", cid);
+  }
+
   const send = useMutation({
-    mutationFn: async (history: Msg[]) => chat({ data: { messages: history } }),
-    onSuccess: (r) => {
+    mutationFn: async (vars: { history: Msg[]; cid: string }) => {
+      const r = await chat({ data: { messages: vars.history } });
+      return { r, cid: vars.cid };
+    },
+    onSuccess: async ({ r, cid }) => {
       const responseText = r.content || "...";
       setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
-      if (voiceMode) {
-        speak(responseText);
-      }
+      await persistMessage(cid, "assistant", responseText);
+      if (voiceMode) speak(responseText);
     },
     onError: (e: Error) => {
       toast.error(e.message);
@@ -61,11 +110,10 @@ function ChatPage() {
     },
   });
 
-  function submit(text: string) {
+  async function submit(text: string) {
     const t = text.trim();
     if (!t || send.isPending) return;
-    
-    // Stop any ongoing speech or listening when user sends a message
+
     stopListening();
     stopSpeaking();
     resetTranscript();
@@ -73,7 +121,14 @@ function ChatPage() {
     const next = [...messages, { role: "user" as const, content: t }];
     setMessages(next);
     setInput("");
-    send.mutate(next);
+
+    const cid = await ensureConversation(t);
+    if (!cid) {
+      toast.error("Could not save conversation");
+      return;
+    }
+    await persistMessage(cid, "user", t);
+    send.mutate({ history: next, cid });
   }
 
   useEffect(() => {
