@@ -201,6 +201,58 @@ const interviewFinishSchema = z.object({
   })).min(2).max(40),
 });
 
+/* ------- Video study notes ------- */
+const notesSchema = z.object({
+  video_url: z.string().url().max(500),
+  video_title: z.string().trim().min(1).max(300),
+});
+
+export const aiGenerateVideoNotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => notesSchema.parse(d))
+  .handler(async ({ data }) => {
+    const prompt = `You are an expert study notes generator. Based on the YouTube video titled "${data.video_title}" (${data.video_url}), create comprehensive timestamped study notes.
+
+Generate realistic, educational timestamped study notes as if you had watched this video. Create 5-7 sections with meaningful timestamps.
+
+Return ONLY valid JSON in this exact format (no markdown, no extra text):
+{
+  "video_title": "${data.video_title.replace(/"/g, '\\"')}",
+  "notes": [
+    {
+      "timestamp": "0:00",
+      "section_title": "Introduction",
+      "content": "• Key point 1\\n• Key point 2\\n• Key point 3"
+    }
+  ]
+}`;
+
+    const result = await callGateway({
+      model: "google/gemini-3-flash-preview",
+      messages: [
+        { role: "system", content: "You are a study notes generator. Always respond with valid JSON only, no markdown code blocks, no extra text." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+    });
+
+    const raw = result?.choices?.[0]?.message?.content ?? "";
+    // Strip any accidental markdown fences
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (!parsed.notes || !Array.isArray(parsed.notes)) throw new Error("Bad shape");
+      return parsed as { video_title: string; notes: Array<{ timestamp: string; section_title: string; content: string }> };
+    } catch {
+      // Fallback: wrap raw text
+      return {
+        video_title: data.video_title,
+        notes: [{ timestamp: "0:00", section_title: "AI Study Notes", content: cleaned || "Could not parse notes. Please try again." }],
+      };
+    }
+  });
+
 export const aiInterviewFinish = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => interviewFinishSchema.parse(d))

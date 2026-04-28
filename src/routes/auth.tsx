@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { GraduationCap, Loader2 } from "lucide-react";
+import { GraduationCap, Loader2, MailCheck } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -29,6 +29,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +38,14 @@ function AuthPage() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      if (error.message.toLowerCase().includes("email not confirmed")) {
+        toast.error("Please confirm your email before signing in. Check your inbox.");
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
     toast.success("Welcome back!");
     nav({ to: "/dashboard" });
   }
@@ -47,7 +55,7 @@ function AuthPage() {
     const parsed = schema.safeParse({ email, password });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -57,8 +65,49 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("Account created! Logging you in…");
-    nav({ to: "/dashboard" });
+    // If session is returned immediately → email confirmation is disabled → go to dashboard
+    if (data.session) {
+      toast.success("Account created! Welcome!");
+      nav({ to: "/dashboard" });
+      return;
+    }
+    // Email confirmation required → show pending screen
+    setAwaitingConfirmation(true);
+  }
+
+  if (awaitingConfirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
+            <MailCheck className="h-10 w-10 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Check your email 📬</h1>
+          <p className="text-muted-foreground mb-1">
+            We sent a confirmation link to <span className="font-semibold text-foreground">{email}</span>.
+          </p>
+          <p className="text-sm text-muted-foreground mb-8">
+            Click the link in the email to activate your account, then come back here to sign in.
+          </p>
+          <Button variant="outline" onClick={() => setAwaitingConfirmation(false)} className="w-full h-11">
+            Back to sign in
+          </Button>
+          <p className="text-xs text-muted-foreground mt-4">
+            Didn't receive it? Check your spam folder or{" "}
+            <button
+              className="underline text-primary hover:text-primary/80"
+              onClick={async () => {
+                const { error } = await supabase.auth.resend({ type: "signup", email });
+                if (error) toast.error(error.message);
+                else toast.success("Confirmation email resent!");
+              }}
+            >
+              resend it
+            </button>.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
