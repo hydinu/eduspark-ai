@@ -3,22 +3,45 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
 async function callGateway(body: Record<string, unknown>) {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("LOVABLE_API_KEY not configured");
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    if (res.status === 429) throw new Error("Rate limit reached. Try again in a moment.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
-    const t = await res.text();
-    throw new Error(`AI gateway error (${res.status}): ${t.slice(0, 200)}`);
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  // Prefer Lovable gateway; fall back to direct Gemini API
+  if (lovableKey) {
+    const res = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      if (res.status === 429) throw new Error("Rate limit reached. Try again in a moment.");
+      if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
+      const t = await res.text();
+      throw new Error(`AI gateway error (${res.status}): ${t.slice(0, 200)}`);
+    }
+    return res.json();
   }
-  return res.json();
+
+  if (geminiKey) {
+    // Use Gemini-compatible OpenAI endpoint; swap model name
+    const geminiBody = { ...body, model: "gemini-1.5-flash" };
+    const res = await fetch(GEMINI_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${geminiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(geminiBody),
+    });
+    if (!res.ok) {
+      if (res.status === 429) throw new Error("Rate limit reached. Try again in a moment.");
+      const t = await res.text();
+      throw new Error(`Gemini API error (${res.status}): ${t.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
+  throw new Error("AI not configured. Add LOVABLE_API_KEY or GEMINI_API_KEY to your .env file to enable AI features.");
 }
 
 /* ------- Chat tutor ------- */
