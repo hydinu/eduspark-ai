@@ -24,6 +24,13 @@ export const Route = createFileRoute("/_app/courses")({
 
 type Resource = { title: string; type: string; provider: string; description: string; estimated_hours: number; difficulty: string; search_query: string };
 
+function formatViews(n: number): string {
+  if (!n || n === 0) return '';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M views`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K views`;
+  return `${n} views`;
+}
+
 function CoursesPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -131,10 +138,8 @@ function CoursesPage() {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
                   <span>{r.channel}</span>
-                  <span>•</span>
-                  <span>{r.view_count.toLocaleString()} views</span>
-                  <span>•</span>
-                  <span>{r.duration || 'N/A'}</span>
+                  {formatViews(r.view_count) && <><span>•</span><span>{formatViews(r.view_count)}</span></>}
+                  {r.duration && <><span>•</span><span>{r.duration}</span></>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button

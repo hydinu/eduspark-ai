@@ -93,14 +93,12 @@ export function generateAIContent(title: string, description: string, topic: str
 }
 
 function formatDuration(isoDuration: string): string {
-  // Simple ISO 8601 duration parser for PT#M#S
-  const match = isoDuration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+  if (!isoDuration) return "";
+  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return "";
-  
   const h = parseInt(match[1] || "0");
   const m = parseInt(match[2] || "0");
   const s = parseInt(match[3] || "0");
-  
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
@@ -123,14 +121,14 @@ async function fetchVideosViaBackend(topic: string): Promise<VideoFetchResult> {
     thumbnail: v.thumbnail,
     channel: v.channel,
     published_at: v.published_at,
-    view_count: 0,
-    duration: '',
+    view_count: typeof v.view_count === 'number' ? v.view_count : parseInt(v.view_count || '0'),
+    duration: v.duration || '',
     description: v.description || '',
-    has_transcript: v.has_transcript,
+    has_transcript: v.has_transcript ?? false,
     ai_content: generateAIContent(v.title, v.description || '', topic),
   }));
 
-  return { topic, videos, source: 'ytfetcher' };
+  return { topic, videos, source: 'youtube-api' };
 }
 
 async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult> {
