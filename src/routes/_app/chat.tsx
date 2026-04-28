@@ -7,8 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/AppShell";
-import { MessageSquare, Send, Loader2, Sparkles, User as UserIcon, Bot } from "lucide-react";
+import { MessageSquare, Send, Loader2, Sparkles, User as UserIcon, Bot, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
+import { useSpeech } from "@/hooks/useSpeech";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
@@ -28,10 +29,30 @@ function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const { isListening, isSpeaking, supported, startListening, stopListening, speak, stopSpeaking, transcript, resetTranscript } = useSpeech();
+
+  useEffect(() => {
+    if (transcript) {
+      setInput((prev) => {
+        // Only update if it's different to avoid overriding manual typing unnecessarily
+        if (!prev.endsWith(transcript)) {
+          return transcript;
+        }
+        return prev;
+      });
+    }
+  }, [transcript]);
 
   const send = useMutation({
     mutationFn: async (history: Msg[]) => chat({ data: { messages: history } }),
-    onSuccess: (r) => setMessages((prev) => [...prev, { role: "assistant", content: r.content || "..." }]),
+    onSuccess: (r) => {
+      const responseText = r.content || "...";
+      setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
+      if (voiceMode) {
+        speak(responseText);
+      }
+    },
     onError: (e: Error) => {
       toast.error(e.message);
       setMessages((prev) => prev.slice(0, -1));
@@ -41,6 +62,12 @@ function ChatPage() {
   function submit(text: string) {
     const t = text.trim();
     if (!t || send.isPending) return;
+    
+    // Stop any ongoing speech or listening when user sends a message
+    stopListening();
+    stopSpeaking();
+    resetTranscript();
+
     const next = [...messages, { role: "user" as const, content: t }];
     setMessages(next);
     setInput("");
@@ -53,12 +80,26 @@ function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-6 lg:p-10 pb-4 max-w-4xl mx-auto w-full">
+      <div className="p-6 lg:p-10 pb-4 max-w-4xl mx-auto w-full flex items-start justify-between">
         <PageHeader
           icon={MessageSquare}
           title="AI Tutor"
           description="Ask anything — get clear explanations, study tips, and resources."
         />
+        {supported && (
+          <Button
+            variant={voiceMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setVoiceMode(!voiceMode);
+              if (voiceMode) stopSpeaking();
+            }}
+            className="shrink-0 rounded-full px-4"
+          >
+            {voiceMode ? <Volume2 className="h-4 w-4 mr-2" /> : <VolumeX className="h-4 w-4 mr-2" />}
+            {voiceMode ? "Voice On" : "Voice Off"}
+          </Button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 lg:px-10">
@@ -103,18 +144,31 @@ function ChatPage() {
             onSubmit={(e) => { e.preventDefault(); submit(input); }}
             className="flex gap-2 items-end"
           >
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); }
-              }}
-              placeholder="Ask your AI tutor anything…"
-              rows={1}
-              maxLength={4000}
-              className="resize-none min-h-[48px] max-h-40"
-            />
-            <Button type="submit" disabled={!input.trim() || send.isPending} className="h-12 px-4">
+            <div className="relative flex-1">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); }
+                }}
+                placeholder={isListening ? "Listening..." : "Ask your AI tutor anything…"}
+                rows={1}
+                maxLength={4000}
+                className="resize-none min-h-[48px] max-h-40 pr-12"
+              />
+              {supported && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={`absolute right-2 bottom-2 h-8 w-8 rounded-full ${isListening ? 'text-red-500 hover:text-red-600 bg-red-500/10' : 'text-muted-foreground'}`}
+                  onClick={() => isListening ? stopListening() : startListening()}
+                >
+                  {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              )}
+            </div>
+            <Button type="submit" disabled={!input.trim() || send.isPending} className="h-12 px-4 shrink-0">
               {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
