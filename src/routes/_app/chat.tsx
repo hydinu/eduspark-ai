@@ -10,6 +10,8 @@ import { PageHeader } from "@/components/AppShell";
 import { MessageSquare, Send, Loader2, Sparkles, User as UserIcon, Bot, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { useSpeech } from "@/hooks/useSpeech";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
