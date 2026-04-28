@@ -1,28 +1,32 @@
 """
-EduSpark AI — Python Backend
-Provides real YouTube transcript extraction and AI-powered study notes.
-Runs on http://localhost:8000
+EduSpark AI — Python Backend v3
+- Primary AI: Groq (free, open-source Llama 3, 14,400 req/day)
+- Fallback: Direct transcript parsing (NO AI, always works)
+- Auto port management: kills old process if port is busy
 """
 
 import os
 import re
 import json
+import socket
+import signal
+import subprocess
+import sys
 import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
-from google import genai
-from google.genai import types
 
-# ── Config ──────────────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyD2r5Yte8rMRdA-AwACq6MQ-yntnF3Ww_I")
+# ── Config ────────────────────────────────────────────────────────────────────
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 YOUTUBE_API_KEY = os.getenv("VITE_YOUTUBE_API_KEY", "AIzaSyB1huPRyS6SOq_vDvrgNCSfK6eV4k4x3jE")
+PORT           = int(os.getenv("BACKEND_PORT", "8000"))
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-app = FastAPI(title="EduSpark AI Backend", version="2.0")
-
+# ── App ───────────────────────────────────────────────────────────────────────
+app = FastAPI(title="EduSpark AI Backend", version="3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,118 +34,234 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def extract_video_id(url: str) -> str | None:
-    """Extract YouTube video ID from any YouTube URL."""
-    patterns = [
+    m = re.search(
         r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})",
-        r"^([a-zA-Z0-9_-]{11})$",
-    ]
-    for p in patterns:
-        m = re.search(p, url)
-        if m:
-            return m.group(1)
-    return None
+        url
+    )
+    return m.group(1) if m else None
+
+
+def fmt_ts(seconds: float) -> str:
+    s = int(seconds)
+    h, m, sec = s // 3600, (s % 3600) // 60, s % 60
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
 def get_transcript(video_id: str) -> list[dict]:
-    """Fetch real captions/subtitles from YouTube."""
     try:
-        # Try English first, then any available language
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB"])
-        return transcript
-    except NoTranscriptFound:
+        return YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB", "hi"])
+    except (NoTranscriptFound, TranscriptsDisabled):
         try:
-            # Fallback: get whatever language is available
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            transcript = transcript_list.find_generated_transcript(["en", "hi", "es", "fr", "de"])
-            return transcript.fetch()
+            tl = YouTubeTranscriptApi.list_transcripts(video_id)
+            t = next(iter(tl))
+            return t.fetch()
         except Exception:
             return []
-    except TranscriptsDisabled:
-        return []
     except Exception:
         return []
 
 
-def format_timestamp(seconds: float) -> str:
-    """Convert seconds to mm:ss or h:mm:ss."""
-    s = int(seconds)
-    h = s // 3600
-    m = (s % 3600) // 60
-    sec = s % 60
-    if h > 0:
-        return f"{h}:{m:02d}:{sec:02d}"
-    return f"{m}:{sec:02d}"
+def call_groq(messages: list[dict], model: str = "llama-3.3-70b-versatile") -> str:
+    """Call Groq API — free, open-source Llama 3."""
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY not set")
+    resp = requests.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        json={"model": model, "messages": messages, "temperature": 0.4, "max_tokens": 3000},
+        timeout=30,
+    )
+    if not resp.ok:
+        body = resp.text[:300]
+        raise RuntimeError(f"Groq error ({resp.status_code}): {body}")
+    return resp.json()["choices"][0]["message"]["content"]
 
 
-def transcript_to_text(transcript: list[dict], max_chars: int = 8000) -> str:
-    """Convert transcript entries to plain text, truncated."""
+def build_notes_from_transcript(transcript: list[dict], title: str, section_duration: int = 120) -> dict:
+    """
+    Parse transcript into timestamped sections WITHOUT any AI.
+    Groups captions into ~2-minute sections, extracts key bullet points.
+    Always works — no API key needed.
+    """
+    if not transcript:
+        return None
+
+    sections = []
+    current_section = []
+    section_start = transcript[0]["start"]
+    section_num = 1
+
+    for entry in transcript:
+        current_section.append(entry)
+        elapsed = entry["start"] - section_start
+
+        if elapsed >= section_duration or entry is transcript[-1]:
+            # Build bullet points from current section text
+            raw_text = " ".join(e["text"].replace("\n", " ") for e in current_section)
+
+            # Split into sentences / meaningful phrases
+            sentences = re.split(r'(?<=[.!?])\s+', raw_text.strip())
+            bullets = []
+            for s in sentences:
+                s = s.strip()
+                if len(s) > 20:   # skip very short fragments
+                    bullets.append(f"• {s}")
+            if not bullets:
+                bullets = [f"• {raw_text.strip()[:200]}"]
+
+            content = "\n".join(bullets[:6])  # max 6 bullets per section
+
+            # Generate a simple section title from the first sentence
+            first = sentences[0].strip() if sentences else "Section"
+            section_title = first[:60] + ("…" if len(first) > 60 else "")
+            if section_title.lower().startswith("•"):
+                section_title = section_title[1:].strip()
+
+            sections.append({
+                "timestamp": fmt_ts(section_start),
+                "section_title": section_title or f"Section {section_num}",
+                "content": content,
+            })
+
+            # Reset for next section
+            current_section = []
+            section_start = entry["start"]
+            section_num += 1
+
+    return {
+        "video_title": title,
+        "source": "direct_transcript",
+        "has_real_transcript": True,
+        "notes": sections[:10],   # max 10 sections
+    }
+
+
+def build_notes_with_groq(transcript: list[dict], title: str) -> dict:
+    """Use Groq (Llama 3) to generate polished notes from real transcript."""
+    # Build text chunk (max 6000 chars to stay within token limits)
     lines = []
     total = 0
     for entry in transcript:
-        line = f"[{format_timestamp(entry['start'])}] {entry['text']}"
+        line = f"[{fmt_ts(entry['start'])}] {entry['text'].replace(chr(10), ' ')}"
         total += len(line)
-        if total > max_chars:
-            lines.append("... (transcript truncated)")
+        if total > 6000:
             break
         lines.append(line)
-    return "\n".join(lines)
+    transcript_text = "\n".join(lines)
+
+    prompt = f"""You are an expert study notes generator. Below is the REAL transcript from a YouTube video titled "{title}".
+
+TRANSCRIPT:
+{transcript_text}
+
+Generate 5-8 timestamped study notes sections. Use the actual timestamps from the transcript.
+
+Return ONLY valid JSON, no markdown fences:
+{{
+  "video_title": "{title}",
+  "notes": [
+    {{
+      "timestamp": "0:00",
+      "section_title": "Clear section title",
+      "content": "• Real point from transcript\\n• Another real point\\n• Key concept explained"
+    }}
+  ]
+}}"""
+
+    content = call_groq([
+        {"role": "system", "content": "You are a study notes generator. Respond with valid JSON only."},
+        {"role": "user", "content": prompt},
+    ])
+
+    # Strip fences if present
+    content = re.sub(r"^```json\s*", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"^```\s*", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"```\s*$", "", content).strip()
+
+    parsed = json.loads(content)
+    parsed["source"] = "groq_llama3"
+    parsed["has_real_transcript"] = True
+    return parsed
 
 
-def get_youtube_videos(topic: str, max_results: int = 10) -> list[dict]:
-    """Search YouTube videos via Data API v3."""
-    search_url = "https://www.googleapis.com/youtube/v3/search"
-    search_params = {
-        "part": "snippet",
-        "q": f"{topic} tutorial explanation educational",
-        "type": "video",
-        "maxResults": max_results,
-        "order": "relevance",
-        "videoCategoryId": "27",
-        "safeSearch": "strict",
-        "key": YOUTUBE_API_KEY,
+def build_notes_groq_no_transcript(title: str, video_url: str) -> dict:
+    """Groq notes when no transcript available."""
+    prompt = f"""Generate educational study notes for a YouTube video titled: "{title}"
+
+Return ONLY valid JSON, no markdown:
+{{
+  "video_title": "{title}",
+  "notes": [
+    {{
+      "timestamp": "0:00",
+      "section_title": "Introduction",
+      "content": "• Key concept\\n• Key concept\\n• Key concept"
+    }}
+  ]
+}}"""
+
+    content = call_groq([
+        {"role": "system", "content": "You generate study notes as JSON only."},
+        {"role": "user", "content": prompt},
+    ])
+    content = re.sub(r"^```json\s*", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"^```\s*", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"```\s*$", "", content).strip()
+    parsed = json.loads(content)
+    parsed["source"] = "groq_ai_generated"
+    parsed["has_real_transcript"] = False
+    return parsed
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {
+        "status": "EduSpark AI Backend v3 running",
+        "ai_provider": "Groq (Llama 3)" if GROQ_API_KEY else "Direct transcript parsing (no AI key needed)",
+        "port": PORT,
     }
-    r = requests.get(search_url, params=search_params, timeout=10)
+
+
+@app.get("/api/search-videos")
+def search_videos(topic: str = Query(..., min_length=1), max_results: int = Query(default=10, le=25)):
+    search_url = "https://www.googleapis.com/youtube/v3/search"
+    r = requests.get(search_url, params={
+        "part": "snippet", "q": f"{topic} tutorial educational",
+        "type": "video", "maxResults": max_results, "order": "relevance",
+        "safeSearch": "strict", "key": YOUTUBE_API_KEY,
+    }, timeout=10)
     if not r.ok:
         raise HTTPException(status_code=r.status_code, detail=f"YouTube API error: {r.text[:200]}")
-    
     search_data = r.json()
     if not search_data.get("items"):
-        return []
+        return {"topic": topic, "videos": [], "source": "youtube-api"}
 
     video_ids = ",".join(item["id"]["videoId"] for item in search_data["items"])
-    details_url = "https://www.googleapis.com/youtube/v3/videos"
-    detail_r = requests.get(details_url, params={
-        "part": "snippet,contentDetails,statistics",
-        "id": video_ids,
-        "key": YOUTUBE_API_KEY,
+    detail_r = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
+        "part": "snippet,contentDetails,statistics", "id": video_ids, "key": YOUTUBE_API_KEY,
     }, timeout=10)
-    
     if not detail_r.ok:
         raise HTTPException(status_code=detail_r.status_code, detail="Failed to fetch video details")
-    
-    detail_data = detail_r.json()
+
     videos = []
-    for item in detail_data.get("items", []):
+    for item in detail_r.json().get("items", []):
         snippet = item["snippet"]
         stats = item.get("statistics", {})
-        duration_iso = item.get("contentDetails", {}).get("duration", "")
-        
-        # Parse ISO 8601 duration
-        duration = ""
-        dm = re.match(r"PT(\d+H)?(\d+M)?(\d+S)?", duration_iso)
+        dur_iso = item.get("contentDetails", {}).get("duration", "")
+        dm = re.match(r"PT(\d+H)?(\d+M)?(\d+S)?", dur_iso)
         if dm:
             h = int((dm.group(1) or "0H")[:-1])
             m = int((dm.group(2) or "0M")[:-1])
             s = int((dm.group(3) or "0S")[:-1])
-            duration = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
-
+            duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        else:
+            duration = ""
         video_id = item["id"]
-        # Check if transcript exists
-        has_transcript = len(get_transcript(video_id)) > 0
-
         videos.append({
             "title": snippet["title"],
             "video_id": video_id,
@@ -151,26 +271,9 @@ def get_youtube_videos(topic: str, max_results: int = 10) -> list[dict]:
             "published_at": snippet.get("publishedAt", ""),
             "view_count": int(stats.get("viewCount", 0)),
             "duration": duration,
-            "description": snippet.get("description", "")[:500],
-            "has_transcript": has_transcript,
+            "description": snippet.get("description", "")[:400],
+            "has_transcript": True,  # checked lazily on demand
         })
-    return videos
-
-
-# ── Routes ───────────────────────────────────────────────────────────────────
-
-@app.get("/")
-def root():
-    return {"status": "EduSpark AI Backend running", "version": "2.0"}
-
-
-@app.get("/api/search-videos")
-def search_videos(
-    topic: str = Query(..., min_length=1),
-    max_results: int = Query(default=10, le=25),
-):
-    """Search YouTube videos for a topic and return structured data."""
-    videos = get_youtube_videos(topic, max_results)
     return {"topic": topic, "videos": videos, "source": "youtube-api"}
 
 
@@ -181,91 +284,75 @@ class NotesRequest(BaseModel):
 
 @app.post("/api/generate-notes")
 def generate_notes(body: NotesRequest):
-    """
-    Fetch the real YouTube transcript and generate timestamped study notes
-    using Gemini AI.
-    """
     video_id = extract_video_id(body.video_url)
     if not video_id:
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL — could not extract video ID.")
 
-    # ── Step 1: Get real transcript ──────────────────────────────────────────
+    title = body.video_title or f"YouTube video {video_id}"
     transcript = get_transcript(video_id)
 
+    # ── Strategy 1: Groq + real transcript (best quality) ──────────────────
+    if GROQ_API_KEY and transcript:
+        try:
+            return build_notes_with_groq(transcript, title)
+        except Exception as e:
+            print(f"[warn] Groq+transcript failed: {e} — falling back")
+
+    # ── Strategy 2: Direct transcript parsing (no AI, always works) ────────
     if transcript:
-        transcript_text = transcript_to_text(transcript, max_chars=8000)
-        source = "real_transcript"
-    else:
-        # No transcript available — tell Gemini to generate from title
-        transcript_text = None
-        source = "ai_generated"
+        result = build_notes_from_transcript(transcript, title)
+        if result:
+            return result
 
-    # ── Step 2: Build Gemini prompt ──────────────────────────────────────────
-    title = body.video_title or f"YouTube video {video_id}"
+    # ── Strategy 3: Groq without transcript ────────────────────────────────
+    if GROQ_API_KEY:
+        try:
+            return build_notes_groq_no_transcript(title, body.video_url)
+        except Exception as e:
+            print(f"[warn] Groq no-transcript failed: {e}")
 
-    if transcript_text:
-        prompt = f"""You are an expert study notes generator. Below is the REAL transcript from a YouTube video titled "{title}".
+    # ── Strategy 4: Hardcoded placeholder (absolute last resort) ───────────
+    return {
+        "video_title": title,
+        "source": "unavailable",
+        "has_real_transcript": False,
+        "notes": [{
+            "timestamp": "0:00",
+            "section_title": "Subtitles not available",
+            "content": (
+                "• This video does not have subtitles/captions enabled\n"
+                "• Add a GROQ_API_KEY to your .env for AI-generated notes\n"
+                "• Get a free key at: https://console.groq.com"
+            ),
+        }],
+    }
 
-TRANSCRIPT:
-{transcript_text}
 
-Based on this real transcript, generate comprehensive timestamped study notes. Use the actual timestamps from the transcript. Create 5-8 logical sections that cover the entire video.
+# ── Port management & startup ─────────────────────────────────────────────────
 
-Return ONLY valid JSON with no markdown, no extra text:
-{{
-  "video_title": "{title}",
-  "source": "real_transcript",
-  "notes": [
-    {{
-      "timestamp": "0:00",
-      "section_title": "Introduction",
-      "content": "• Key point from the actual transcript\\n• Another real point\\n• Quote or concept from the video"
-    }}
-  ]
-}}"""
-    else:
-        prompt = f"""You are an expert study notes generator. The YouTube video "{title}" does not have subtitles available.
-
-Generate realistic educational timestamped study notes as if you had watched this entire video. Base them on what would typically be covered in a video with this title. Create 5-7 sections.
-
-Return ONLY valid JSON with no markdown, no extra text:
-{{
-  "video_title": "{title}",
-  "source": "ai_generated",
-  "notes": [
-    {{
-      "timestamp": "0:00",
-      "section_title": "Introduction",
-      "content": "• Key point\\n• Key point\\n• Key point"
-    }}
-  ]
-}}"""
-
-    # ── Step 3: Call Gemini ──────────────────────────────────────────────────
+def kill_port(port: int):
+    """Kill any process using the given port (Windows)."""
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True, text=True
         )
-        raw = response.text.strip()
-
-        # Strip markdown fences if present
-        raw = re.sub(r"^```json\s*", "", raw, flags=re.IGNORECASE)
-        raw = re.sub(r"^```\s*", "", raw, flags=re.IGNORECASE)
-        raw = re.sub(r"```\s*$", "", raw)
-
-        result = json.loads(raw.strip())
-        result["source"] = source
-        result["has_real_transcript"] = transcript_text is not None
-        return result
-
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+        for line in result.stdout.splitlines():
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.strip().split()
+                pid = int(parts[-1])
+                if pid != os.getpid():
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                                   capture_output=True)
+                    print(f"Killed old process PID {pid} on port {port}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+        print(f"Could not auto-kill port {port}: {e}")
 
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting EduSpark AI Backend on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    kill_port(PORT)  # auto-kill any old process on this port
+    ai_mode = "Groq Llama 3 (open-source)" if GROQ_API_KEY else "Direct transcript parsing (no API key needed)"
+    print(f"EduSpark AI Backend v3 starting on http://localhost:{PORT}")
+    print(f"AI mode: {ai_mode}")
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

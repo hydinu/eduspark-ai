@@ -61,10 +61,15 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
       }
     },
     onError: (err: Error) => {
-      // If backend is not running, show helpful error
-      if (err.message.includes("fetch") || err.message.includes("Failed to fetch") || err.message.includes("ECONNREFUSED")) {
-        toast.error("Python backend not running! Start it with: python backend.py");
+      const msg = err.message || "";
+      if (msg.includes("fetch") || msg.includes("Failed to fetch") || msg.includes("Load failed")) {
+        toast.error("Backend not running. Start it with: python backend.py");
+      } else if (msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("rate")) {
+        toast.error("AI quota exceeded. Notes will use direct transcript parsing — restart backend.");
+      } else {
+        toast.error("Could not generate notes. Please try again.");
       }
+      console.error("Notes error:", msg);
     },
   });
 
@@ -165,7 +170,12 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
                 </div>
                 <h3 className="text-base font-bold mb-1">Failed to generate notes</h3>
                 <p className="text-sm text-muted-foreground max-w-sm mb-2">
-                  {(generate.error as Error)?.message}
+                  {(() => {
+                    const msg = (generate.error as Error)?.message || "";
+                    if (msg.includes("fetch") || msg.includes("Failed to fetch")) return "Python backend is not running.";
+                    if (msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")) return "AI quota exceeded — restart the backend.";
+                    return "Something went wrong. Please try again.";
+                  })()}
                 </p>
                 <p className="text-xs text-muted-foreground mb-4 bg-muted rounded p-2 font-mono">
                   python backend.py
