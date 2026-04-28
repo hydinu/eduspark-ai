@@ -60,9 +60,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{user?.email ?? "Guest"}</p>
-              <p className="text-xs text-muted-foreground">{user ? "Student" : "Not signed in"}</p>
+              <p className="text-xs text-muted-foreground">{user ? "Student" : "Free access"}</p>
             </div>
-            {user ? (
+            {user && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -71,12 +71,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <LogOut className="h-4 w-4" />
               </Button>
-            ) : (
-              <Link to="/auth">
-                <Button variant="ghost" size="sm" className="text-xs px-2">
-                  Sign in
-                </Button>
-              </Link>
             )}
           </div>
         </div>
