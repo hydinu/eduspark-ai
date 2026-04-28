@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { aiSuggestCourses } from "@/server/ai.functions";
+import { fetchYouTubeVideos, YouTubeVideo } from "@/lib/youtube-api";
+import { NotesModal } from "@/components/NotesModal";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -13,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/AppShell";
-import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2 } from "lucide-react";
+import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/courses")({
@@ -25,10 +27,10 @@ type Resource = { title: string; type: string; provider: string; description: st
 function CoursesPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const suggestFn = useServerFn(aiSuggestCourses);
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
-  const [results, setResults] = useState<Resource[]>([]);
+  const [results, setResults] = useState<YouTubeVideo[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<{url: string, title: string} | null>(null);
 
   const { data: saved } = useQuery({
     queryKey: ["course-progress", user?.id],
@@ -40,18 +42,17 @@ function CoursesPage() {
   });
 
   const suggest = useMutation({
-    mutationFn: async () => suggestFn({ data: { topic: topic.trim(), level } }),
-    onSuccess: (r) => { setResults(r.resources); if (r.resources.length === 0) toast.info("No suggestions, try another topic."); },
+    mutationFn: async () => fetchYouTubeVideos(topic.trim()),
+    onSuccess: (r) => { setResults(r.videos); if (r.videos.length === 0) toast.info("No suggestions, try another topic."); },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  async function bookmark(r: Resource) {
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(r.search_query)}`;
+  async function bookmark(r: YouTubeVideo) {
     const { error } = await supabase.from("course_progress").insert({
       user_id: user!.id,
       course_title: r.title,
-      course_url: url,
-      source: r.provider,
+      course_url: r.link,
+      source: r.channel,
       status: "bookmarked",
     });
     if (error) { toast.error(error.message); return; }
@@ -116,31 +117,44 @@ function CoursesPage() {
           <h2 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wider">Suggestions for "{topic}"</h2>
           <div className="grid md:grid-cols-2 gap-4">
             {results.map((r, i) => (
-              <Card key={i} className="p-5 hover:shadow-soft transition-shadow">
+              <Card key={i} className="p-5 hover:shadow-soft transition-shadow flex flex-col">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <h3 className="font-semibold leading-snug">{r.title}</h3>
-                  <Badge variant="secondary" className="shrink-0 capitalize">{r.type}</Badge>
+                  <Badge variant="secondary" className="shrink-0">Video</Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{r.description}</p>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4">
-                  <span>{r.provider}</span>
-                  <span>•</span>
-                  <span>~{r.estimated_hours}h</span>
-                  <span>•</span>
-                  <span className="capitalize">{r.difficulty}</span>
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{r.description || r.ai_content?.summary}</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {r.ai_content?.key_concepts?.slice(0, 3).map(concept => (
+                    <Badge key={concept} variant="outline" className="text-[10px]">{concept}</Badge>
+                  ))}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
+                  <span>{r.channel}</span>
+                  <span>•</span>
+                  <span>{r.view_count.toLocaleString()} views</span>
+                  <span>•</span>
+                  <span>{r.duration || 'N/A'}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     asChild
-                    className="flex-1"
+                    className="flex-1 min-w-[80px]"
                   >
-                    <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(r.search_query)}`} target="_blank" rel="noopener noreferrer">
-                      <Youtube className="h-3.5 w-3.5 mr-1.5" /> Find
+                    <a href={r.link} target="_blank" rel="noopener noreferrer">
+                      <Youtube className="h-3.5 w-3.5 mr-1.5" /> Watch
                     </a>
                   </Button>
-                  <Button size="sm" onClick={() => bookmark(r)} className="flex-1">
+                  <Button 
+                    variant="secondary" 
+                    size="sm" 
+                    onClick={() => setSelectedVideo({ url: r.link, title: r.title })} 
+                    className="flex-1 min-w-[80px]"
+                  >
+                    <FileText className="h-3.5 w-3.5 mr-1.5" /> Notes
+                  </Button>
+                  <Button size="sm" onClick={() => bookmark(r)} className="flex-1 min-w-[80px]">
                     <Bookmark className="h-3.5 w-3.5 mr-1.5" /> Save
                   </Button>
                 </div>
@@ -189,6 +203,13 @@ function CoursesPage() {
           </div>
         )}
       </div>
+      
+      <NotesModal 
+        isOpen={!!selectedVideo} 
+        onClose={() => setSelectedVideo(null)} 
+        videoUrl={selectedVideo?.url || ""} 
+        videoTitle={selectedVideo?.title || ""} 
+      />
     </div>
   );
 }
