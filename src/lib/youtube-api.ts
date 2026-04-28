@@ -193,10 +193,16 @@ async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult
 }
 
 export async function fetchYouTubeVideos(topic: string): Promise<VideoFetchResult> {
-  // Use YouTube Data API directly — no Python backend dependency
-  console.info('[api] Fetching via YouTube Data API…');
-  const result = await fetchVideosViaYouTubeAPI(topic);
-  console.info(`[api] YouTube API returned ${result.videos.length} videos`);
-  return result;
+  try {
+    console.info('[api] Trying Python backend for video search…');
+    const result = await fetchVideosViaBackend(topic);
+    console.info(`[api] Backend returned ${result.videos.length} videos`);
+    return result;
+  } catch (backendErr: any) {
+    console.warn('[api] Backend not running, falling back to YouTube Data API:', backendErr.message);
+    const result = await fetchVideosViaYouTubeAPI(topic);
+    console.info(`[api] YouTube API returned ${result.videos.length} videos`);
+    return result;
+  }
 }
 

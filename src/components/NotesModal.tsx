@@ -3,10 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMutation } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { aiGenerateVideoNotes } from "@/server/ai.functions";
-import { Loader2, Download, AlertCircle, Play, FileText } from "lucide-react";
+import { Loader2, Download, AlertCircle, Play, FileText, CheckCircle } from "lucide-react";
 import { downloadNotesAsPDF, NotesData } from "@/lib/pdf-generator";
+import { toast } from "sonner";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 interface NotesModalProps {
   isOpen: boolean;
@@ -16,22 +17,31 @@ interface NotesModalProps {
 }
 
 function extractVideoId(url: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+async function fetchNotesFromBackend(videoUrl: string, videoTitle: string): Promise<NotesData & { source?: string; has_real_transcript?: boolean }> {
+  const res = await fetch(`${BACKEND_URL}/api/generate-notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ video_url: videoUrl, video_title: videoTitle }),
+  });
+
+  if (!res.ok) {
+    let detail = `Backend error (${res.status})`;
+    try { const j = await res.json(); detail = j.detail || detail; } catch {}
+    throw new Error(detail);
   }
-  return null;
+
+  return res.json();
 }
 
 export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModalProps) {
-  const [notesData, setNotesData] = useState<NotesData | null>(null);
+  const [notesData, setNotesData] = useState<(NotesData & { source?: string; has_real_transcript?: boolean }) | null>(null);
   const [activeTab, setActiveTab] = useState("watch");
-  const generateFn = useServerFn(aiGenerateVideoNotes);
 
-  // Reset state whenever modal opens for a new video
+  // Reset when modal opens for a different video
   useEffect(() => {
     if (isOpen) {
       setNotesData(null);
@@ -40,10 +50,21 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
   }, [isOpen, videoUrl]);
 
   const generate = useMutation({
-    mutationFn: () => generateFn({ data: { video_url: videoUrl, video_title: videoTitle } }),
+    mutationFn: () => fetchNotesFromBackend(videoUrl, videoTitle),
     onSuccess: (data) => {
-      setNotesData(data as unknown as NotesData);
+      setNotesData(data);
       setActiveTab("notes");
+      if (data.has_real_transcript) {
+        toast.success("📝 Notes generated from real subtitles!");
+      } else {
+        toast.info("💡 No subtitles found — AI generated notes from context.");
+      }
+    },
+    onError: (err: Error) => {
+      // If backend is not running, show helpful error
+      if (err.message.includes("fetch") || err.message.includes("Failed to fetch") || err.message.includes("ECONNREFUSED")) {
+        toast.error("Python backend not running! Start it with: python backend.py");
+      }
     },
   });
 
@@ -87,7 +108,7 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
               <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
                 <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
                 <p className="text-sm">
-                  Could not embed this video.{" "}
+                  Could not embed video.{" "}
                   <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">
                     Open on YouTube
                   </a>
@@ -95,22 +116,21 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
               </div>
             )}
 
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex flex-col items-center gap-2">
               <Button
                 onClick={() => generate.mutate()}
                 disabled={generate.isPending}
                 className="gap-2 shadow-md"
               >
                 {generate.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Generating notes…
-                  </>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Fetching subtitles & generating notes…</>
                 ) : (
-                  <>
-                    <FileText className="h-4 w-4" /> Generate AI Study Notes
-                  </>
+                  <><FileText className="h-4 w-4" /> Generate Notes from Real Subtitles</>
                 )}
               </Button>
+              <p className="text-xs text-muted-foreground">
+                Uses real YouTube subtitles/ASR • Falls back to AI if unavailable
+              </p>
             </div>
           </TabsContent>
 
@@ -120,7 +140,7 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
               <div className="space-y-6 py-4">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
-                  <p className="text-sm text-muted-foreground">Generating AI study notes with Gemini…</p>
+                  <p className="text-sm text-muted-foreground">Fetching YouTube transcript and generating notes…</p>
                 </div>
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="animate-pulse space-y-3">
@@ -144,12 +164,13 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
                   <AlertCircle className="w-7 h-7 text-destructive" />
                 </div>
                 <h3 className="text-base font-bold mb-1">Failed to generate notes</h3>
-                <p className="text-sm text-muted-foreground max-w-sm mb-4">
-                  {(generate.error as Error)?.message || "An unexpected error occurred."}
+                <p className="text-sm text-muted-foreground max-w-sm mb-2">
+                  {(generate.error as Error)?.message}
                 </p>
-                <Button variant="outline" onClick={() => generate.mutate()}>
-                  Retry
-                </Button>
+                <p className="text-xs text-muted-foreground mb-4 bg-muted rounded p-2 font-mono">
+                  python backend.py
+                </p>
+                <Button variant="outline" onClick={() => generate.mutate()}>Retry</Button>
               </div>
             )}
 
@@ -157,8 +178,7 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
               <div className="flex flex-col items-center justify-center py-14 text-center text-muted-foreground">
                 <FileText className="h-10 w-10 mb-3 opacity-30" />
                 <p className="text-sm">
-                  Switch to the <strong>Watch Video</strong> tab and click{" "}
-                  <strong>Generate AI Study Notes</strong> to get started.
+                  Switch to <strong>Watch Video</strong> and click <strong>Generate Notes from Real Subtitles</strong>.
                 </p>
               </div>
             )}
@@ -167,10 +187,18 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <p className="text-sm text-muted-foreground">
-                      <span className="font-semibold text-foreground">{notesData.notes.length}</span> sections generated
-                    </p>
+                    {notesData.has_real_transcript ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full">
+                        <CheckCircle className="h-3 w-3" /> Real subtitles
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                        💡 AI-generated
+                      </span>
+                    )}
+                    <span className="text-sm text-muted-foreground">
+                      <span className="font-semibold text-foreground">{notesData.notes.length}</span> sections
+                    </span>
                   </div>
                   <Button onClick={() => downloadNotesAsPDF(notesData)} size="sm" className="gap-2 shrink-0">
                     <Download className="w-4 h-4" /> Download PDF
@@ -195,8 +223,7 @@ export function NotesModal({ isOpen, onClose, videoUrl, videoTitle }: NotesModal
                           .split("\n")
                           .filter((line) => line.trim().length > 0)
                           .map((line, j) => {
-                            const trimmed = line.trim();
-                            const text = trimmed.replace(/^[•\-\*]\s*/, "");
+                            const text = line.trim().replace(/^[•\-\*]\s*/, "");
                             return (
                               <li key={j} className="flex items-start gap-2.5 text-sm leading-relaxed text-muted-foreground">
                                 <span className="mt-2 w-1.5 h-1.5 rounded-full shrink-0 bg-primary/60" />
