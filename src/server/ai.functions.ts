@@ -26,7 +26,7 @@ async function callGateway(body: Record<string, unknown>) {
 
   if (geminiKey) {
     // Use Gemini-compatible OpenAI endpoint; swap model name
-    const geminiBody = { ...body, model: "gemini-1.5-flash" };
+    const geminiBody = { ...body, model: "gemini-2.0-flash" };
     const res = await fetch(GEMINI_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${geminiKey}`, "Content-Type": "application/json" },
