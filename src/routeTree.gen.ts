@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppResumeRouteImport } from './routes/_app/resume'
+import { Route as AppProfileRouteImport } from './routes/_app/profile'
 import { Route as AppQuizzesRouteImport } from './routes/_app/quizzes'
 import { Route as AppInterviewRouteImport } from './routes/_app/interview'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
@@ -31,6 +33,16 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppResumeRoute = AppResumeRouteImport.update({
+  id: '/resume',
+  path: '/resume',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppQuizzesRoute = AppQuizzesRouteImport.update({
   id: '/quizzes',
@@ -65,7 +77,9 @@ export interface FileRoutesByFullPath {
   '/courses': typeof AppCoursesRoute
   '/dashboard': typeof AppDashboardRoute
   '/interview': typeof AppInterviewRoute
+  '/profile': typeof AppProfileRoute
   '/quizzes': typeof AppQuizzesRoute
+  '/resume': typeof AppResumeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -74,7 +88,9 @@ export interface FileRoutesByTo {
   '/courses': typeof AppCoursesRoute
   '/dashboard': typeof AppDashboardRoute
   '/interview': typeof AppInterviewRoute
+  '/profile': typeof AppProfileRoute
   '/quizzes': typeof AppQuizzesRoute
+  '/resume': typeof AppResumeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -85,7 +101,9 @@ export interface FileRoutesById {
   '/_app/courses': typeof AppCoursesRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/interview': typeof AppInterviewRoute
+  '/_app/profile': typeof AppProfileRoute
   '/_app/quizzes': typeof AppQuizzesRoute
+  '/_app/resume': typeof AppResumeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,7 +114,9 @@ export interface FileRouteTypes {
     | '/courses'
     | '/dashboard'
     | '/interview'
+    | '/profile'
     | '/quizzes'
+    | '/resume'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -105,7 +125,9 @@ export interface FileRouteTypes {
     | '/courses'
     | '/dashboard'
     | '/interview'
+    | '/profile'
     | '/quizzes'
+    | '/resume'
   id:
     | '__root__'
     | '/'
@@ -115,7 +137,9 @@ export interface FileRouteTypes {
     | '/_app/courses'
     | '/_app/dashboard'
     | '/_app/interview'
+    | '/_app/profile'
     | '/_app/quizzes'
+    | '/_app/resume'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -146,6 +170,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/resume': {
+      id: '/_app/resume'
+      path: '/resume'
+      fullPath: '/resume'
+      preLoaderRoute: typeof AppResumeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/quizzes': {
       id: '/_app/quizzes'
@@ -190,7 +228,9 @@ interface AppRouteChildren {
   AppCoursesRoute: typeof AppCoursesRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppInterviewRoute: typeof AppInterviewRoute
+  AppProfileRoute: typeof AppProfileRoute
   AppQuizzesRoute: typeof AppQuizzesRoute
+  AppResumeRoute: typeof AppResumeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -198,7 +238,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppCoursesRoute: AppCoursesRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppInterviewRoute: AppInterviewRoute,
+  AppProfileRoute: AppProfileRoute,
   AppQuizzesRoute: AppQuizzesRoute,
+  AppResumeRoute: AppResumeRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -211,12 +253,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
