@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import type { QuizAttempt, InterviewSession, CourseProgress, DashboardStats } from "./useHistory";
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND = import.meta.env.VITE_BACKEND_URL || "";
 
 // ─── Token Helper ─────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 // src/lib/youtube-api.ts
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY || "";
 const YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
 const YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos";
