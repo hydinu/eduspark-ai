@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+
 import { aiInterviewStart, aiInterviewTurn, aiInterviewFinish } from "@/server/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -31,9 +31,7 @@ const TEMPLATES = [
 function InterviewPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const startFn = useServerFn(aiInterviewStart);
-  const turnFn = useServerFn(aiInterviewTurn);
-  const finishFn = useServerFn(aiInterviewFinish);
+
 
   const [roleTopic, setRoleTopic] = useState("");
   const [transcript, setTranscript] = useState<Turn[]>([]);
@@ -69,7 +67,7 @@ function InterviewPage() {
   });
 
   const start = useMutation({
-    mutationFn: async () => startFn({ data: { role_topic: roleTopic.trim() } }),
+    mutationFn: async () => aiInterviewStart({ role_topic: roleTopic.trim() }),
     onSuccess: (r) => {
       setTranscript([{ role: "interviewer", content: r.content }]);
       if (autoSpeak) speak(r.content);
@@ -78,7 +76,7 @@ function InterviewPage() {
   });
 
   const turn = useMutation({
-    mutationFn: async (t: Turn[]) => turnFn({ data: { role_topic: roleTopic, transcript: t } }),
+    mutationFn: async (t: Turn[]) => aiInterviewTurn({ role_topic: roleTopic, transcript: t }),
     onSuccess: (r) => {
       setTranscript((prev) => [...prev, { role: "interviewer", content: r.content }]);
       if (autoSpeak) speak(r.content);
@@ -87,7 +85,7 @@ function InterviewPage() {
   });
 
   const finish = useMutation({
-    mutationFn: async () => finishFn({ data: { role_topic: roleTopic, transcript } }),
+    mutationFn: async () => aiInterviewFinish({ role_topic: roleTopic, transcript }),
     onSuccess: async (r) => {
       setFeedback({ score: r.score, markdown: r.feedback_markdown });
       if (user) {
