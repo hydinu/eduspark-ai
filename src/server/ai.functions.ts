@@ -265,9 +265,10 @@ RULES:
   return { content: result?.choices?.[0]?.message?.content ?? "" };
 }
 
-export async function aiInterviewTurn(data: { role_topic: string; transcript: { role: string; content: string }[] }) {
+export async function aiInterviewTurn(data: { role_topic: string; transcript: { role: string; content: string }[]; resume_context?: string }) {
+  const resumeInfo = data.resume_context ? `\nCANDIDATE RESUME: ${data.resume_context}\nAsk questions about their projects, skills, and experience from this resume.` : "";
   const messages = [
-    { role: "system" as const, content: `You are interviewing a candidate for ${data.role_topic}. This is a LIVE VOICE interview.
+    { role: "system" as const, content: `You are interviewing a candidate for ${data.role_topic}. This is a LIVE VOICE interview.${resumeInfo}
 
 STRICT RULES:
 1. Your ENTIRE response must be MAX 2 short sentences.

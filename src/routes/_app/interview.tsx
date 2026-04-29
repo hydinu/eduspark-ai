@@ -81,43 +81,30 @@ function InterviewPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, phase]);
 
-  // --- When AI finishes speaking, auto-start mic for next answer ---
+  // --- When AI finishes speaking, auto-start mic ---
   useEffect(() => {
     if (phase === "speaking" && !isSpeaking) {
-      // AI finished speaking, start listening for user's answer
       startMicForAnswer();
     }
   }, [isSpeaking, phase]);
 
-  // --- Start mic during speaking phase so user can interrupt ---
-  useEffect(() => {
-    if (phase === "speaking") {
-      // Start listening in the background so we can detect interrupts
-      setTimeout(() => startListening(), 800);
-    }
-  }, [phase]);
+  // NO mic during speaking phase — prevents feedback loop from speakers
 
-  // --- Interrupt: if user starts talking while AI is speaking, stop AI ---
-  useEffect(() => {
-    if (phase === "speaking" && speechTranscript && speechTranscript.trim().length > 0) {
-      // User interrupted! Stop AI immediately and switch to listening
-      stopSpeaking();
-      setPhase("listening");
-    }
-  }, [speechTranscript, phase]);
+  function interruptAI() {
+    // User taps to interrupt — stop AI voice, start mic
+    stopSpeaking();
+    startMicForAnswer();
+  }
 
   function startMicForAnswer() {
     setPhase("listening");
     lastTranscriptRef.current = "";
     resetTranscript();
-    if (!isListening) {
-      setTimeout(() => {
-        startListening();
-      }, 400);
-    }
+    setTimeout(() => startListening(), 300);
   }
 
   function submitAnswer(text: string) {
+    stopListening();
     const next: Turn[] = [...transcript, { role: "candidate", content: text }];
     setTranscript(next);
     lastTranscriptRef.current = "";
@@ -176,9 +163,9 @@ function InterviewPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // --- AI asks next question ---
+  // --- AI asks next question (with resume context) ---
   const turnMutation = useMutation({
-    mutationFn: async (t: Turn[]) => aiInterviewTurn({ role_topic: roleTopic, transcript: t }),
+    mutationFn: async (t: Turn[]) => aiInterviewTurn({ role_topic: roleTopic, transcript: t, resume_context: buildResumeContext() }),
     onSuccess: (r) => {
       setTranscript((prev) => [...prev, { role: "interviewer", content: r.content }]);
       setPhase("speaking");
@@ -187,7 +174,7 @@ function InterviewPage() {
     onError: (e: Error) => {
       toast.error(e.message);
       setTranscript((p) => p.slice(0, -1));
-      startMicForAnswer(); // Retry listening
+      startMicForAnswer();
     },
   });
 
@@ -382,12 +369,15 @@ function InterviewPage() {
       <div className="border-t bg-card/80 backdrop-blur p-4">
         <div className="max-w-3xl mx-auto">
           {phase === "speaking" && (
-            <div className="flex items-center justify-center gap-3 py-3">
+            <div className="flex flex-col items-center gap-3 py-3">
               <div className="relative">
                 <Bot className="h-6 w-6 text-primary" />
                 <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 bg-success rounded-full animate-pulse" />
               </div>
               <span className="text-sm font-medium text-muted-foreground">Interviewer is speaking...</span>
+              <Button size="sm" variant="outline" onClick={interruptAI} className="mt-1">
+                <MicOff className="h-3.5 w-3.5 mr-1.5" /> Tap to interrupt & answer
+              </Button>
             </div>
           )}
 
