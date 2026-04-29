@@ -60,7 +60,7 @@ function AuthPage() {
     
     // In Supabase, if OTP is enabled, we still call signUp.
     // It will send an OTP if configured in the dashboard.
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { 
@@ -68,6 +68,8 @@ function AuthPage() {
         emailRedirectTo: window.location.origin,
       },
     });
+    
+    console.log("Signup response:", { data, error });
     
     setLoading(false);
     if (error) {
@@ -101,11 +103,12 @@ function AuthPage() {
   const handleResendOtp = async () => {
     if (!email) { toast.error("Email is required to resend code."); return; }
     setLoading(true);
-    const { error } = await supabase.auth.resend({
+    const { data, error } = await supabase.auth.resend({
       type: 'signup',
       email,
       options: { emailRedirectTo: window.location.origin }
     });
+    console.log("Resend response:", { data, error });
     if (error) {
       toast.error(`Error: ${error.message}`);
     } else {
