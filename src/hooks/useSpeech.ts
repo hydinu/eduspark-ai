@@ -28,6 +28,12 @@ export function useSpeech(): UseSpeechReturn {
     // Check support
     if (!window.speechSynthesis) {
       setSupported(false);
+    } else {
+      // Pre-load voices (Chrome loads them async)
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -114,40 +120,75 @@ export function useSpeech(): UseSpeechReturn {
     // Cancel any ongoing speech
     window.speechSynthesis.cancel();
 
-    // Clean up markdown before speaking
+    // Clean up markdown/URLs before speaking
     const cleanText = text
-      .replace(/[#*`_\[\]]/g, "") // Remove common markdown symbols
-      .replace(/https?:\/\/[^\s]+/g, "link") // Replace URLs with "link"
+      .replace(/```[\s\S]*?```/g, " code block ") // Replace code blocks
+      .replace(/[#*`_\[\]()]/g, "") // Remove markdown symbols
+      .replace(/https?:\/\/[^\s]+/g, "link") // Replace URLs
+      .replace(/\n{2,}/g, ". ") // Double newlines become pauses
+      .replace(/\n/g, ", ") // Single newlines become short pauses
+      .replace(/\s{2,}/g, " ") // Collapse whitespace
       .trim();
 
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = "en-US";
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+    // Pick the best natural-sounding English voice
+    const pickVoice = (): SpeechSynthesisVoice | null => {
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return null;
 
-    // Try to find a good English voice
-    let voices = window.speechSynthesis.getVoices();
-    const findVoice = (vList: SpeechSynthesisVoice[]) => 
-      vList.find(v => v.lang.startsWith("en-") && (v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Natural")));
-    
-    let voice = findVoice(voices);
-    if (voice) {
-      utterance.voice = voice;
-    }
+      const enVoices = voices.filter(v => v.lang.startsWith("en"));
+      if (!enVoices.length) return null;
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      console.log("Speaking started:", cleanText.slice(0, 30) + "...");
+      // Priority keywords for natural/premium voices (ordered by preference)
+      const priority = [
+        "Google UK English Female",
+        "Google US English",
+        "Microsoft Zira",
+        "Microsoft Jenny",
+        "Samantha",
+        "Karen",
+        "Natural",
+        "Enhanced",
+        "Premium",
+        "Google",
+      ];
+
+      for (const keyword of priority) {
+        const match = enVoices.find(v => v.name.includes(keyword));
+        if (match) return match;
+      }
+
+      // Fallback: prefer any non-local voice (usually better quality)
+      return enVoices.find(v => !v.localService) || enVoices[0];
     };
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = (e) => {
-      console.error("TTS Error:", e);
-      setIsSpeaking(false);
-    };
 
-    window.speechSynthesis.speak(utterance);
+    // Split into sentences for more natural pacing
+    const sentences = cleanText
+      .split(/(?<=[.!?])\s+/)
+      .filter(s => s.trim().length > 0);
+
+    const voice = pickVoice();
+
+    sentences.forEach((sentence, i) => {
+      const utterance = new SpeechSynthesisUtterance(sentence.trim());
+      utterance.lang = "en-US";
+      utterance.rate = 0.95; // Slightly slower for clarity
+      utterance.pitch = 1.05; // Slightly higher for warmth
+      utterance.volume = 1.0;
+
+      if (voice) utterance.voice = voice;
+
+      if (i === 0) {
+        utterance.onstart = () => setIsSpeaking(true);
+      }
+      if (i === sentences.length - 1) {
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+      }
+
+      window.speechSynthesis.speak(utterance);
+    });
   }, []);
 
   const stopSpeaking = useCallback(() => {
