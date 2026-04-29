@@ -341,37 +341,6 @@ function AuthPage() {
             </form>
           )}
 
-          {/* Divider */}
-          <div className="flex items-center gap-4 my-5">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* Quick Access */}
-          <div className="grid grid-cols-2 gap-3 mt-6">
-            <Button
-              id="auth-demo-btn"
-              variant="outline"
-              className="h-11 text-xs font-medium border-primary/30 hover:bg-primary-soft/30"
-              onClick={handleDemoLogin}
-              disabled={loading}
-            >
-              <User className="h-4 w-4 mr-2 text-primary" />
-              Quick Demo
-            </Button>
-            
-            <Button
-              id="auth-guest-btn"
-              variant="outline"
-              className="h-11 text-xs font-medium"
-              onClick={handleGuest}
-              disabled={loading}
-            >
-              <Sparkles className="h-4 w-4 mr-2 text-primary" />
-              Guest Mode
-            </Button>
-          </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             {tab === "login" ? (
