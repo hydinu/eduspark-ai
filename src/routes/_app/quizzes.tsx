@@ -29,12 +29,12 @@ function QuizPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const genFn = useServerFn(aiGenerateQuiz);
-  
+
   const [mode, setMode] = useState<Mode>("standard");
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("intermediate");
   const [count, setCount] = useState("5");
-  
+
   const [quiz, setQuiz] = useState<{ id?: string; topic: string; questions?: Question[]; observation?: string; mode: Mode } | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [textAnswer, setTextAnswer] = useState("");
@@ -102,7 +102,7 @@ function QuizPage() {
     const pct = Math.round((s / total) * 100);
     setScore(pct);
     setSubmitted(true);
-    
+
     if (user && quiz.id) {
       const { error } = await supabase.from("quiz_attempts").insert({
         quiz_id: quiz.id, user_id: user.id, score: s, total, answers: answers as any,
@@ -270,9 +270,9 @@ function QuizPage() {
                 placeholder="Type your explanation here..."
                 className="min-h-[120px] mb-4"
               />
-              <Button 
-                onClick={() => submitLogic.mutate()} 
-                disabled={!textAnswer.trim() || submitLogic.isPending} 
+              <Button
+                onClick={() => submitLogic.mutate()}
+                disabled={!textAnswer.trim() || submitLogic.isPending}
                 className="w-full h-12"
               >
                 {submitLogic.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
@@ -294,9 +294,9 @@ function QuizPage() {
       />
 
       <div className="grid md:grid-cols-2 gap-4 mb-8">
-        <button 
+        <button
           onClick={() => setMode("standard")}
-          className={cn("p-6 rounded-2xl border-2 transition-all text-left group", 
+          className={cn("p-6 rounded-2xl border-2 transition-all text-left group",
             mode === "standard" ? "border-primary bg-primary-soft/50 shadow-soft" : "border-border hover:border-primary/40 bg-card")}
         >
           <div className="h-10 w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -306,9 +306,9 @@ function QuizPage() {
           <p className="text-sm text-muted-foreground mt-1">AI-generated questions on any specific topic.</p>
         </button>
 
-        <button 
+        <button
           onClick={() => setMode("logic")}
-          className={cn("p-6 rounded-2xl border-2 transition-all text-left group", 
+          className={cn("p-6 rounded-2xl border-2 transition-all text-left group",
             mode === "logic" ? "border-primary bg-primary-soft/50 shadow-soft" : "border-border hover:border-primary/40 bg-card")}
         >
           <div className="h-10 w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -333,11 +333,10 @@ function QuizPage() {
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
                   <SelectTrigger className="h-11 flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="beginner">🌱 Beginner</SelectItem>
-                    <SelectItem value="intermediate">🚀 Intermediate</SelectItem>
-                    <SelectItem value="advanced">🔥 Advanced</SelectItem>
-                    <SelectItem value="expert">🏆 Expert</SelectItem>
-                    <SelectItem value="elite">👑 Elite (Extra)</SelectItem>
+                    <SelectItem value="beginner"> Beginner</SelectItem>
+                    <SelectItem value="intermediate"> Intermediate</SelectItem>
+                    <SelectItem value="advanced"> Advanced</SelectItem>
+
                   </SelectContent>
                 </Select>
                 <Select value={count} onValueChange={setCount}>
@@ -359,7 +358,7 @@ function QuizPage() {
           ) : (
             <div className="flex flex-col items-center py-4 text-center">
               <p className="text-sm text-muted-foreground mb-6 max-w-md">
-                The Logic Reasoning mode generates a dynamic scenario from a knowledge graph. 
+                The Logic Reasoning mode generates a dynamic scenario from a knowledge graph.
                 You will need to explain the solution using logic and reasoning.
               </p>
               <Button
@@ -390,7 +389,7 @@ function QuizPage() {
               const isKG = h.quizzes?.topic === "Knowledge Graph Reasoning";
               return (
                 <Card key={h.id} className="p-4 flex items-center gap-3">
-                  <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center shrink-0", 
+                  <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
                     isKG ? "bg-primary-soft text-primary" : "bg-secondary text-muted-foreground")}>
                     {isKG ? <Network className="h-5 w-5" /> : <Brain className="h-5 w-5" />}
                   </div>

@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/AppShell";
-import { Mic, Loader2, Sparkles, Send, Trophy, RotateCcw, Bot, User as UserIcon } from "lucide-react";
+import { Mic, MicOff, Loader2, Sparkles, Send, Trophy, RotateCcw, Bot, User as UserIcon, Volume2, VolumeX } from "lucide-react";
+import { useSpeech } from "@/hooks/useSpeech";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/interview")({
@@ -38,7 +39,25 @@ function InterviewPage() {
   const [transcript, setTranscript] = useState<Turn[]>([]);
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<{ score: number; markdown: string } | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    isListening,
+    startListening,
+    stopListening,
+    speak,
+    stopSpeaking,
+    transcript: speechTranscript,
+    supported: speechSupported
+  } = useSpeech();
+
+  // Sync speech transcript to answer state
+  useEffect(() => {
+    if (isListening && speechTranscript) {
+      setAnswer(speechTranscript);
+    }
+  }, [speechTranscript, isListening]);
 
   const { data: past } = useQuery({
     queryKey: ["interviews", user?.id],
@@ -51,13 +70,19 @@ function InterviewPage() {
 
   const start = useMutation({
     mutationFn: async () => startFn({ data: { role_topic: roleTopic.trim() } }),
-    onSuccess: (r) => setTranscript([{ role: "interviewer", content: r.content }]),
+    onSuccess: (r) => {
+      setTranscript([{ role: "interviewer", content: r.content }]);
+      if (autoSpeak) speak(r.content);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const turn = useMutation({
     mutationFn: async (t: Turn[]) => turnFn({ data: { role_topic: roleTopic, transcript: t } }),
-    onSuccess: (r) => setTranscript((prev) => [...prev, { role: "interviewer", content: r.content }]),
+    onSuccess: (r) => {
+      setTranscript((prev) => [...prev, { role: "interviewer", content: r.content }]);
+      if (autoSpeak) speak(r.content);
+    },
     onError: (e: Error) => { toast.error(e.message); setTranscript((p) => p.slice(0, -1)); },
   });
 
@@ -198,8 +223,17 @@ function InterviewPage() {
               <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${m.role === "candidate" ? "bg-primary text-primary-foreground" : "bg-gradient-primary text-primary-foreground"}`}>
                 {m.role === "candidate" ? <UserIcon className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
               </div>
-              <div className={`max-w-[78%] rounded-2xl px-4 py-3 ${m.role === "candidate" ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-card border rounded-tl-sm"}`}>
+              <div className={`max-w-[78%] rounded-2xl px-4 py-3 relative group ${m.role === "candidate" ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-card border rounded-tl-sm"}`}>
                 <div className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                {m.role === "interviewer" && (
+                  <button 
+                    onClick={() => speak(m.content)}
+                    className="absolute -right-8 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-secondary hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Speak message"
+                  >
+                    <Volume2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -220,15 +254,36 @@ function InterviewPage() {
 
       <div className="border-t bg-card/50 backdrop-blur p-4">
         <div className="max-w-4xl mx-auto flex gap-2 items-end">
-          <Textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }}
-            placeholder="Type your answer…"
-            rows={1}
-            maxLength={4000}
-            className="resize-none min-h-[48px] max-h-40"
-          />
+          <div className="relative flex-1">
+            <Textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }}
+              placeholder={isListening ? "Listening..." : "Type your answer…"}
+              rows={1}
+              maxLength={4000}
+              className={`resize-none min-h-[48px] max-h-40 pr-12 ${isListening ? "border-primary ring-1 ring-primary" : ""}`}
+            />
+            {speechSupported && (
+              <button
+                onClick={isListening ? stopListening : startListening}
+                className={`absolute right-3 bottom-2.5 p-1.5 rounded-full transition-colors ${isListening ? "bg-primary text-primary-foreground animate-pulse" : "bg-secondary text-muted-foreground hover:bg-accent"}`}
+                title={isListening ? "Stop listening" : "Speech to text"}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
+          
+          <Button 
+            variant="outline" 
+            onClick={() => setAutoSpeak(!autoSpeak)} 
+            className="h-12 w-12 p-0 shrink-0"
+            title={autoSpeak ? "Disable auto-speak" : "Enable auto-speak"}
+          >
+            {autoSpeak ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </Button>
+
           <Button onClick={sendAnswer} disabled={!answer.trim() || turn.isPending} className="h-12 px-4">
             {turn.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>

@@ -20,7 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes
-from supabase import create_client, Client
+
+# Try to import Supabase, but make it optional
+try:
+    from supabase import create_client
+    Client = None
+    HAS_SUPABASE = True
+except ImportError:
+    HAS_SUPABASE = False
+    create_client = None
+    Client = None
 
 # Load .env file automatically
 load_dotenv()
@@ -42,15 +51,22 @@ SUPABASE_KEY = (
     or ""
 )
 
-_supabase: Client | None = None
+_supabase = None
 
-def get_supabase() -> Client:
-    """Lazily initialize and return the Supabase client."""
+def get_supabase():
+    """Lazily initialize and return the Supabase client. Returns None if Supabase is not available."""
     global _supabase
+    if not HAS_SUPABASE:
+        return None
     if _supabase is None:
         if not SUPABASE_URL or not SUPABASE_KEY:
-            raise RuntimeError("SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be set in .env")
-        _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+            print("Warning: SUPABASE_URL and/or SUPABASE_PUBLISHABLE_KEY not set. Supabase features disabled.")
+            return None
+        try:
+            _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception as e:
+            print(f"Warning: Failed to initialize Supabase client: {e}. Supabase features disabled.")
+            return None
     return _supabase
 
 # ── App ───────────────────────────────────────────────────────────────────────
