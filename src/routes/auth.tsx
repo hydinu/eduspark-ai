@@ -98,6 +98,22 @@ function AuthPage() {
     }
   };
 
+  const handleResendOtp = async () => {
+    if (!email) { toast.error("Email is required to resend code."); return; }
+    setLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: window.location.origin }
+    });
+    if (error) {
+      toast.error(`Error: ${error.message}`);
+    } else {
+      toast.success("New code sent! Please check your spam folder too. ✉️");
+    }
+    setLoading(false);
+  };
+
   const handleGuest = () => {
     localStorage.setItem("eduspark_guest", "true");
     toast.success("Continuing as guest — your progress won't be saved.");
@@ -327,7 +343,17 @@ function AuthPage() {
                     maxLength={6}
                   />
                 </div>
-                <p className="text-[11px] text-muted-foreground text-center">We've sent a code to {email}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-[11px] text-muted-foreground">We've sent a code to {email}</p>
+                  <button 
+                    type="button" 
+                    onClick={handleResendOtp}
+                    disabled={loading}
+                    className="text-[11px] text-primary hover:underline font-medium disabled:opacity-50"
+                  >
+                    Resend Code
+                  </button>
+                </div>
               </div>
 
               <Button
@@ -336,7 +362,15 @@ function AuthPage() {
                 className="w-full h-11 text-sm font-semibold shadow-glow"
                 disabled={loading || otp.length < 6}
               >
-                {loading ? "Verifying..." : "Verify & Complete Signup"}
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Verifying...
+                  </span>
+                ) : "Verify & Complete Signup"}
               </Button>
             </form>
           )}
