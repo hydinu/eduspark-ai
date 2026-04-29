@@ -22,13 +22,13 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
-YOUTUBE_API_KEY = os.getenv("VITE_YOUTUBE_API_KEY", "AIzaSyB1huPRyS6SOq_vDvrgNCSfK6eV4k4x3jE")
-PORT            = int(os.getenv("BACKEND_PORT", "8000"))
+YOUTUBE_API_KEY = os.getenv("VITE_YOUTUBE_API_KEY", "")
+PORT            = int(os.getenv("PORT", "8000"))
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://irasryypizosrzepkfrq.supabase.co")
+SUPABASE_URL = os.getenv("VITE_SUPABASE_URL", "")
 # Try all possible key env var names (server-side has no VITE_ prefix)
 SUPABASE_KEY = (
     os.getenv("SUPABASE_PUBLISHABLE_KEY")
