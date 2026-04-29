@@ -73,7 +73,11 @@ function AuthPage() {
     
     setLoading(false);
     if (error) {
-      toast.error(error.message);
+      if (error.message.toLowerCase().includes("limit") || error.status === 429) {
+        toast.error("Email limit reached! 🛑 Please use 'Quick Demo' below to bypass this for now.");
+      } else {
+        toast.error(error.message);
+      }
     } else {
       toast.success("Verification code sent to your email! ✉️");
       setShowOtp(true);
