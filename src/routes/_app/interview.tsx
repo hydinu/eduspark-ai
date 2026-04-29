@@ -27,6 +27,8 @@ const TEMPLATES = [
   "ML Engineer",
 ];
 
+const SILENCE_TIMEOUT_MS = 3000; // 3 seconds of silence → auto-submit
+
 function InterviewPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -38,6 +40,26 @@ function InterviewPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTranscriptRef = useRef("");
+  const phaseRef = useRef(phase);
+  const noSpeechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep phaseRef in sync
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // ── Auto-start mic when AI finishes speaking ──
+  const handleAISpeechEnd = useCallback(() => {
+    // Only transition if we're still in "speaking" phase
+    if (phaseRef.current !== "speaking") return;
+    setPhase("listening");
+    lastTranscriptRef.current = "";
+    resetTranscript();
+    // Short delay to let TTS fully release audio output
+    setTimeout(() => {
+      if (phaseRef.current === "listening") {
+        startListening();
+      }
+    }, 400);
+  }, []);
 
   const {
     isListening,
@@ -47,57 +69,75 @@ function InterviewPage() {
     speak,
     stopSpeaking,
     transcript: speechTranscript,
+    finalTranscript,
     supported: speechSupported,
     resetTranscript,
-  } = useSpeech();
+  } = useSpeech({ onSpeechEnd: handleAISpeechEnd });
 
-  // --- STRICT MIC CONTROL: OFF during speaking/thinking, ON only during listening ---
+  // ── STRICT MIC CONTROL: OFF during speaking/thinking/done ──
   useEffect(() => {
-    if (phase === "speaking" || phase === "thinking" || phase === "done") {
-      // ALWAYS stop mic when it's NOT user's turn
+    if (phase === "speaking" || phase === "thinking" || phase === "done" || phase === "setup") {
       stopListening();
+      clearSilenceTimer();
+      clearNoSpeechTimer();
     }
   }, [phase]);
 
-  // --- When AI finishes speaking, start user's turn ---
+  // ── When entering listening phase, start a "no speech at all" timeout ──
+  // If user doesn't say anything for 8 seconds, prompt them
   useEffect(() => {
-    if (phase === "speaking" && !isSpeaking) {
-      // AI done speaking → give mic to user
-      setPhase("listening");
-      lastTranscriptRef.current = "";
-      resetTranscript();
-      setTimeout(() => startListening(), 500);
+    if (phase === "listening") {
+      clearNoSpeechTimer();
+      noSpeechTimerRef.current = setTimeout(() => {
+        // If still listening and no transcript at all, keep waiting
+        // (user might need more time to think)
+        // We just ensure mic is still running
+        if (phaseRef.current === "listening" && !lastTranscriptRef.current) {
+          // Re-confirm mic is on
+          startListening();
+        }
+      }, 8000);
     }
-  }, [isSpeaking, phase]);
+    return () => clearNoSpeechTimer();
+  }, [phase]);
 
-  // --- Auto-detect silence: 3 seconds of no new speech → auto-submit ---
+  // ── Silence detection: 3 seconds of no new speech → auto-submit ──
   useEffect(() => {
     if (phase !== "listening") return;
-    if (!speechTranscript || speechTranscript === lastTranscriptRef.current) return;
+    if (!speechTranscript || speechTranscript.trim() === lastTranscriptRef.current.trim()) return;
 
     lastTranscriptRef.current = speechTranscript;
+    clearSilenceTimer();
 
-    // Clear previous timer
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-
-    // 3 seconds of silence → submit
     silenceTimerRef.current = setTimeout(() => {
+      if (phaseRef.current !== "listening") return;
       const finalAnswer = lastTranscriptRef.current.trim();
       if (finalAnswer.length > 2) {
-        stopListening();
         submitAnswer(finalAnswer);
       }
-    }, 3000);
+    }, SILENCE_TIMEOUT_MS);
 
-    return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    };
+    return () => clearSilenceTimer();
   }, [speechTranscript, phase]);
 
-  // --- Auto-scroll ---
+  // ── Auto-scroll ──
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, phase]);
+
+  function clearSilenceTimer() {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }
+
+  function clearNoSpeechTimer() {
+    if (noSpeechTimerRef.current) {
+      clearTimeout(noSpeechTimerRef.current);
+      noSpeechTimerRef.current = null;
+    }
+  }
 
   function interruptAI() {
     stopSpeaking();
@@ -108,19 +148,20 @@ function InterviewPage() {
   }
 
   function submitAnswer(text: string) {
-    // Stop mic FIRST
+    // Stop mic FIRST, clear timers
     stopListening();
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    
+    clearSilenceTimer();
+    clearNoSpeechTimer();
+
     const next: Turn[] = [...transcript, { role: "candidate", content: text }];
     setTranscript(next);
     lastTranscriptRef.current = "";
     resetTranscript();
-    setPhase("thinking"); // This triggers mic OFF via the effect above
+    setPhase("thinking"); // mic OFF via the effect above
     turnMutation.mutate(next);
   }
 
-  // --- Load user resume for context ---
+  // ── Load user resume for context ──
   const { data: resume } = useQuery({
     queryKey: ["resume", user?.id],
     enabled: !!user,
@@ -149,7 +190,7 @@ function InterviewPage() {
     return parts.join(". ");
   }
 
-  // --- Past interviews query ---
+  // ── Past interviews query ──
   const { data: past } = useQuery({
     queryKey: ["interviews", user?.id],
     enabled: !!user && transcript.length === 0,
@@ -159,38 +200,43 @@ function InterviewPage() {
     },
   });
 
-  // --- Start interview ---
+  // ── Start interview: AI asks first question → speak → mic auto-starts ──
   const startInterview = useMutation({
     mutationFn: async () => aiInterviewStart({ role_topic: roleTopic.trim(), resume_context: buildResumeContext() }),
     onSuccess: (r) => {
       setTranscript([{ role: "interviewer", content: r.content }]);
       setPhase("speaking");
-      speak(r.content);
+      speak(r.content); // When done speaking, handleAISpeechEnd fires → mic ON
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // --- AI asks next question (with resume context) ---
+  // ── AI asks next question (loop continues) ──
   const turnMutation = useMutation({
     mutationFn: async (t: Turn[]) => aiInterviewTurn({ role_topic: roleTopic, transcript: t, resume_context: buildResumeContext() }),
     onSuccess: (r) => {
       setTranscript((prev) => [...prev, { role: "interviewer", content: r.content }]);
       setPhase("speaking");
-      speak(r.content);
+      speak(r.content); // When done speaking, handleAISpeechEnd fires → mic ON → loop
     },
     onError: (e: Error) => {
       toast.error(e.message);
-      setTranscript((p) => p.slice(0, -1));
-      startMicForAnswer();
+      // On error, go back to listening so user can try again
+      setPhase("listening");
+      lastTranscriptRef.current = "";
+      resetTranscript();
+      setTimeout(() => startListening(), 500);
     },
   });
 
-  // --- Finish & get feedback ---
+  // ── Finish & get feedback ──
   const finishInterview = useMutation({
     mutationFn: async () => aiInterviewFinish({ role_topic: roleTopic, transcript }),
     onSuccess: async (r) => {
       stopListening();
       stopSpeaking();
+      clearSilenceTimer();
+      clearNoSpeechTimer();
       setPhase("done");
       setFeedback({ score: r.score, markdown: r.feedback_markdown });
       if (user) {
@@ -211,6 +257,8 @@ function InterviewPage() {
   function reset() {
     stopListening();
     stopSpeaking();
+    clearSilenceTimer();
+    clearNoSpeechTimer();
     setRoleTopic("");
     setTranscript([]);
     setFeedback(null);
@@ -223,7 +271,7 @@ function InterviewPage() {
   if (feedback) {
     const color = feedback.score >= 80 ? "text-success" : feedback.score >= 50 ? "text-warning" : "text-destructive";
     return (
-      <div className="p-6 lg:p-10 max-w-3xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-10 max-w-3xl mx-auto">
         <PageHeader
           icon={Trophy}
           title="Interview Feedback"
@@ -244,14 +292,14 @@ function InterviewPage() {
   // ==================== SETUP SCREEN ====================
   if (transcript.length === 0) {
     return (
-      <div className="p-6 lg:p-10 max-w-3xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-10 max-w-3xl mx-auto">
         <PageHeader
           icon={Mic}
           title="Mock Interview"
           description="Voice-first AI interview practice. Just talk naturally — no buttons needed."
         />
 
-        <Card className="p-6 mb-6 bg-gradient-card border-primary/10">
+        <Card className="p-4 sm:p-6 mb-6 bg-gradient-card border-primary/10">
           <label className="text-sm font-medium block mb-2">What role are you preparing for?</label>
           <Input
             value={roleTopic}
@@ -280,6 +328,18 @@ function InterviewPage() {
               ⚠️ Your browser doesn't support speech recognition. Please use Google Chrome or Microsoft Edge.
             </p>
           )}
+
+          {/* How it works */}
+          <div className="mt-5 pt-4 border-t border-border/50">
+            <p className="text-xs font-medium text-muted-foreground mb-2">How it works:</p>
+            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+              <li>AI asks you an interview question and reads it aloud</li>
+              <li>Your mic turns ON automatically when the AI finishes speaking</li>
+              <li>Speak your answer naturally — pause for 3 seconds to auto-submit</li>
+              <li>AI analyzes your answer and asks the next question</li>
+              <li>End anytime to get detailed feedback and scoring</li>
+            </ol>
+          </div>
         </Card>
 
         {past && past.length > 0 && (
@@ -311,12 +371,12 @@ function InterviewPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 lg:px-10 border-b bg-card/50 backdrop-blur flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-lg">{roleTopic}</h2>
+      <div className="p-3 sm:p-4 lg:px-10 border-b bg-card/50 backdrop-blur flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="font-bold text-base sm:text-lg truncate">{roleTopic}</h2>
           <p className="text-xs text-muted-foreground">Question {questionCount} • {transcript.length} exchanges</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -324,7 +384,8 @@ function InterviewPage() {
             disabled={finishInterview.isPending || transcript.length < 3}
           >
             {finishInterview.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trophy className="h-4 w-4 mr-1" />}
-            End & Get Feedback
+            <span className="hidden sm:inline">End & Get Feedback</span>
+            <span className="sm:hidden">End</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={reset}>
             <RotateCcw className="h-4 w-4" />
@@ -333,18 +394,18 @@ function InterviewPage() {
       </div>
 
       {/* Transcript */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 lg:px-10 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-4 lg:px-10 py-4">
         <div className="max-w-3xl mx-auto space-y-4">
           {transcript.map((m, i) => (
-            <div key={i} className={`flex gap-3 ${m.role === "candidate" ? "flex-row-reverse" : ""}`}>
+            <div key={i} className={`flex gap-2 sm:gap-3 ${m.role === "candidate" ? "flex-row-reverse" : ""}`}>
               <div className={cn(
-                "h-9 w-9 rounded-full flex items-center justify-center shrink-0",
+                "h-8 w-8 sm:h-9 sm:w-9 rounded-full flex items-center justify-center shrink-0",
                 m.role === "candidate" ? "bg-primary text-primary-foreground" : "bg-gradient-primary text-primary-foreground"
               )}>
                 {m.role === "candidate" ? <UserIcon className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
               </div>
               <div className={cn(
-                "max-w-[80%] rounded-2xl px-4 py-3",
+                "max-w-[85%] sm:max-w-[80%] rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3",
                 m.role === "candidate"
                   ? "bg-primary text-primary-foreground rounded-tr-sm"
                   : "bg-card border rounded-tl-sm"
@@ -356,8 +417,8 @@ function InterviewPage() {
 
           {/* Thinking indicator */}
           {phase === "thinking" && (
-            <div className="flex gap-3">
-              <div className="h-9 w-9 rounded-full bg-gradient-primary text-primary-foreground flex items-center justify-center">
+            <div className="flex gap-2 sm:gap-3">
+              <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-gradient-primary text-primary-foreground flex items-center justify-center">
                 <Bot className="h-4 w-4" />
               </div>
               <div className="bg-card border rounded-2xl rounded-tl-sm px-4 py-3">
@@ -373,10 +434,10 @@ function InterviewPage() {
       </div>
 
       {/* Status Bar — shows mic/speaking state */}
-      <div className="border-t bg-card/80 backdrop-blur p-4">
+      <div className="border-t bg-card/80 backdrop-blur p-3 sm:p-4">
         <div className="max-w-3xl mx-auto">
           {phase === "speaking" && (
-            <div className="flex flex-col items-center gap-3 py-3">
+            <div className="flex flex-col items-center gap-2 sm:gap-3 py-2 sm:py-3">
               <div className="relative">
                 <Bot className="h-6 w-6 text-primary" />
                 <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 bg-success rounded-full animate-pulse" />
@@ -389,15 +450,15 @@ function InterviewPage() {
           )}
 
           {phase === "listening" && (
-            <div className="flex flex-col items-center gap-3 py-2">
+            <div className="flex flex-col items-center gap-2 sm:gap-3 py-2">
               <div className="relative">
                 <div className={cn(
-                  "h-16 w-16 rounded-full flex items-center justify-center transition-all",
+                  "h-14 w-14 sm:h-16 sm:w-16 rounded-full flex items-center justify-center transition-all",
                   isListening
                     ? "bg-primary text-primary-foreground shadow-glow animate-pulse"
                     : "bg-primary/20 text-primary"
                 )}>
-                  {isListening ? <Mic className="h-7 w-7" /> : <MicOff className="h-7 w-7" />}
+                  {isListening ? <Mic className="h-6 w-6 sm:h-7 sm:w-7" /> : <MicOff className="h-6 w-6 sm:h-7 sm:w-7" />}
                 </div>
                 {isListening && (
                   <>
@@ -406,12 +467,12 @@ function InterviewPage() {
                   </>
                 )}
               </div>
-              <div className="text-center">
+              <div className="text-center px-4">
                 <p className="text-sm font-medium">
-                  {speechTranscript ? "Listening... (pause to auto-submit)" : "Your turn — speak your answer"}
+                  {speechTranscript ? "Listening... (pause 3s to auto-submit)" : "Your turn — speak your answer"}
                 </p>
                 {speechTranscript && (
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md italic">
+                  <p className="text-xs text-muted-foreground mt-1 max-w-sm sm:max-w-md italic line-clamp-3">
                     "{speechTranscript}"
                   </p>
                 )}
@@ -421,10 +482,7 @@ function InterviewPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    stopListening();
-                    submitAnswer(speechTranscript.trim());
-                  }}
+                  onClick={() => submitAnswer(speechTranscript.trim())}
                   className="mt-1"
                 >
                   Submit answer now
