@@ -57,24 +57,24 @@ function AuthPage() {
     if (!email || !password || !displayName) { toast.error("Please fill in all fields."); return; }
     if (password.length < 6) { toast.error("Password must be at least 6 characters."); return; }
     setLoading(true);
-    
+
     // In Supabase, if OTP is enabled, we still call signUp.
     // It will send an OTP if configured in the dashboard.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { 
+      options: {
         data: { display_name: displayName },
         emailRedirectTo: window.location.origin,
       },
     });
-    
+
     console.log("Signup response:", { data, error });
-    
+
     setLoading(false);
     if (error) {
       if (error.message.toLowerCase().includes("limit") || error.status === 429) {
-        toast.error("Email limit reached! 🛑 Please use 'Quick Demo' below to bypass this for now.");
+        toast.error("Email limit reached! . Continue as a guest mode");
       } else {
         toast.error(error.message);
       }
@@ -88,13 +88,13 @@ function AuthPage() {
     e.preventDefault();
     if (!otp) { toast.error("Please enter the OTP."); return; }
     setLoading(true);
-    
+
     const { error } = await supabase.auth.verifyOtp({
       email,
       token: otp,
       type: 'signup'
     });
-    
+
     setLoading(false);
     if (error) {
       toast.error(error.message);
@@ -134,7 +134,7 @@ function AuthPage() {
 
     // Try login first
     const { error: loginError } = await supabase.auth.signInWithPassword({ email: demoEmail, password: demoPass });
-    
+
     if (loginError) {
       // If login fails, try signing up the demo account
       const { error: signupError } = await supabase.auth.signUp({
@@ -142,7 +142,7 @@ function AuthPage() {
         password: demoPass,
         options: { data: { display_name: "Demo Student" } }
       });
-      
+
       if (signupError) {
         toast.error("Demo login failed. Please use guest mode.");
       } else {
@@ -199,7 +199,7 @@ function AuthPage() {
               </div>
             </div>
             <div className="flex gap-1 mt-1">
-              {[1,2,3,4,5].map(s => <Sparkles key={s} className="h-3 w-3 text-yellow-300 fill-yellow-300" />)}
+              {[1, 2, 3, 4, 5].map(s => <Sparkles key={s} className="h-3 w-3 text-yellow-300 fill-yellow-300" />)}
             </div>
           </div>
         </div>
@@ -234,11 +234,10 @@ function AuthPage() {
                 key={t}
                 id={`auth-tab-${t}`}
                 onClick={() => setTab(t)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                  tab === t
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === t
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 {t === "login" ? "Sign In" : "Sign Up"}
               </button>
@@ -332,8 +331,8 @@ function AuthPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="auth-otp" className="text-sm font-medium">Enter 6-digit Code</Label>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => setShowOtp(false)}
                     className="text-xs text-primary hover:underline"
                   >
@@ -352,8 +351,8 @@ function AuthPage() {
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-[11px] text-muted-foreground">We've sent a code to {email}</p>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={handleResendOtp}
                     disabled={loading}
                     className="text-[11px] text-primary hover:underline font-medium disabled:opacity-50"
