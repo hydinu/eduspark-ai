@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, MessageSquare, BookOpen, Brain, Mic, LayoutDashboard, LogOut, LogIn, Sparkles, UserCircle2 } from "lucide-react";
+import { GraduationCap, MessageSquare, BookOpen, Brain, Mic, LayoutDashboard, LogOut, LogIn, Sparkles, UserCircle2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ const nav = [
   { to: "/chat", label: "AI Tutor", icon: MessageSquare },
   { to: "/quizzes", label: "Quizzes", icon: Brain },
   { to: "/interview", label: "Interview", icon: Mic },
+  { to: "/resume", label: "Resume", icon: FileText },
 ] as const;
 
 function isGuestMode() {

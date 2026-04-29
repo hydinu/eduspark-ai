@@ -126,6 +126,35 @@ function InterviewPage() {
     turnMutation.mutate(next);
   }
 
+  // --- Load user resume for context ---
+  const { data: resume } = useQuery({
+    queryKey: ["resume", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase.from("user_resumes").select("*").eq("user_id", user!.id).maybeSingle();
+      return data;
+    },
+  });
+
+  function buildResumeContext() {
+    if (!resume) return "";
+    const parts: string[] = [];
+    if (resume.full_name) parts.push(`Name: ${resume.full_name}`);
+    if (resume.skills && typeof resume.skills === "object") {
+      const s = Object.entries(resume.skills as Record<string, string[]>).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`).join("; ");
+      if (s) parts.push(`Skills: ${s}`);
+    }
+    if (Array.isArray(resume.projects)) {
+      const p = (resume.projects as any[]).filter(x => x.title).map(x => `${x.title} (${x.tech_stack || ""})`);
+      if (p.length) parts.push(`Projects: ${p.join(", ")}`);
+    }
+    if (Array.isArray(resume.experience)) {
+      const e = (resume.experience as any[]).filter(x => x.title).map(x => `${x.title} at ${x.company}`);
+      if (e.length) parts.push(`Experience: ${e.join(", ")}`);
+    }
+    return parts.join(". ");
+  }
+
   // --- Past interviews query ---
   const { data: past } = useQuery({
     queryKey: ["interviews", user?.id],
@@ -138,7 +167,7 @@ function InterviewPage() {
 
   // --- Start interview ---
   const startInterview = useMutation({
-    mutationFn: async () => aiInterviewStart({ role_topic: roleTopic.trim() }),
+    mutationFn: async () => aiInterviewStart({ role_topic: roleTopic.trim(), resume_context: buildResumeContext() }),
     onSuccess: (r) => {
       setTranscript([{ role: "interviewer", content: r.content }]);
       setPhase("speaking");

@@ -243,17 +243,19 @@ export async function aiGenerateQuiz(data: { topic: string; difficulty?: string;
 }
 
 /* ------- Interview practice ------- */
-export async function aiInterviewStart(data: { role_topic: string }) {
+export async function aiInterviewStart(data: { role_topic: string; resume_context?: string }) {
   const kgContext = await queryKnowledgeGraph(data.role_topic);
+  const resumeInfo = data.resume_context ? `\nCANDIDATE RESUME: ${data.resume_context}\nUse this resume to ask relevant questions about their projects, skills, and experience.` : "";
   const result = await callAI({
     model: "google/gemini-1.5-flash",
     messages: [
       { role: "system", content: `You are a senior technical interviewer conducting a real interview for the role of ${data.role_topic}.
-${kgContext ? `Context: ${kgContext}` : ""}
+${kgContext ? `Context: ${kgContext}` : ""}${resumeInfo}
 
 RULES:
 - Greet the candidate briefly and naturally (1 sentence).
 - Then ask your FIRST interview question immediately.
+- If you have the candidate's resume, ask about something specific from it (a project, skill, or experience).
 - Keep it conversational and professional, like a real human interviewer.
 - Ask ONE clear question at a time. Do NOT ask multiple questions.
 - Keep your response under 3 sentences total.` },
