@@ -77,14 +77,19 @@ export function useSpeech(): UseSpeechReturn {
       return;
     }
     try {
+      // Clear previous transcript when starting new session
       setTranscript("");
       setInterimTranscript("");
       recognitionRef.current.start();
       setIsListening(true);
-      console.log("Speech recognition started");
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      if (err.name === 'InvalidStateError') {
+        // Already started, ignore
+        return;
+      }
+      console.error("Speech start error:", err);
       toast.error("Could not start microphone. Check permissions.");
+      setIsListening(false);
     }
   }, []);
 

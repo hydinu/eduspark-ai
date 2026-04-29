@@ -41,10 +41,10 @@ function ChatPage() {
   const { isListening, supported, startListening, stopListening, speak, stopSpeaking, transcript, resetTranscript } = useSpeech();
 
   useEffect(() => {
-    if (transcript) {
-      setInput((prev) => (!prev.endsWith(transcript) ? transcript : prev));
+    if (isListening && transcript) {
+      setInput(transcript);
     }
-  }, [transcript]);
+  }, [transcript, isListening]);
 
   // Load most recent conversation on mount
   useEffect(() => {
