@@ -341,6 +341,24 @@ function AuthPage() {
             </form>
           )}
 
+          {/* Guest access */}
+          <div className="flex items-center gap-4 my-5">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <Button
+            id="auth-guest-btn"
+            variant="outline"
+            className="w-full h-11 text-sm font-medium border-primary/20 hover:bg-primary-soft/30 transition-all duration-300 group"
+            onClick={handleGuest}
+            disabled={loading}
+          >
+            <Sparkles className="h-4 w-4 mr-2 text-primary group-hover:animate-pulse" />
+            Explore as Guest
+            <span className="ml-auto text-[10px] text-muted-foreground font-normal">No account needed</span>
+          </Button>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             {tab === "login" ? (
