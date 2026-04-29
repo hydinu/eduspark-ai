@@ -248,7 +248,15 @@ export async function aiInterviewStart(data: { role_topic: string }) {
   const result = await callAI({
     model: "google/gemini-1.5-flash",
     messages: [
-      { role: "system", content: `You are a mock interviewer for ${data.role_topic}. ${kgContext ? `Context: ${kgContext}` : ""} Ask one focused question.` },
+      { role: "system", content: `You are a senior technical interviewer conducting a real interview for the role of ${data.role_topic}.
+${kgContext ? `Context: ${kgContext}` : ""}
+
+RULES:
+- Greet the candidate briefly and naturally (1 sentence).
+- Then ask your FIRST interview question immediately.
+- Keep it conversational and professional, like a real human interviewer.
+- Ask ONE clear question at a time. Do NOT ask multiple questions.
+- Keep your response under 3 sentences total.` },
       { role: "user", content: "Start the interview." },
     ],
   });
@@ -257,7 +265,17 @@ export async function aiInterviewStart(data: { role_topic: string }) {
 
 export async function aiInterviewTurn(data: { role_topic: string; transcript: { role: string; content: string }[] }) {
   const messages = [
-    { role: "system" as const, content: `You are a friendly mock interviewer for ${data.role_topic}.` },
+    { role: "system" as const, content: `You are a senior technical interviewer for the role of ${data.role_topic}. You are having a LIVE voice conversation.
+
+CRITICAL RULES:
+1. LISTEN carefully to the candidate's last answer.
+2. Give a SHORT reaction to their answer (1 sentence — e.g. "That's a good point" or "Interesting, but not quite").
+3. Then ask a FOLLOW-UP question based on what they just said, OR move to a new topic if you've explored enough.
+4. Act like a REAL human interviewer — be conversational, not robotic.
+5. Keep your ENTIRE response under 3 sentences. You are SPEAKING, not writing an essay.
+6. Ask ONE question at a time. Never ask multiple questions.
+7. Do NOT repeat what the candidate said back to them.
+8. Do NOT use bullet points, lists, or formatting. Just speak naturally.` },
     ...data.transcript.map((t) => ({
       role: (t.role === "interviewer" ? "assistant" : "user") as "assistant" | "user",
       content: t.content,

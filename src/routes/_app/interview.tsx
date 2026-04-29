@@ -89,13 +89,32 @@ function InterviewPage() {
     }
   }, [isSpeaking, phase]);
 
+  // --- Start mic during speaking phase so user can interrupt ---
+  useEffect(() => {
+    if (phase === "speaking") {
+      // Start listening in the background so we can detect interrupts
+      setTimeout(() => startListening(), 800);
+    }
+  }, [phase]);
+
+  // --- Interrupt: if user starts talking while AI is speaking, stop AI ---
+  useEffect(() => {
+    if (phase === "speaking" && speechTranscript && speechTranscript.trim().length > 3) {
+      // User interrupted! Stop AI and switch to listening
+      stopSpeaking();
+      setPhase("listening");
+    }
+  }, [speechTranscript, phase]);
+
   function startMicForAnswer() {
     setPhase("listening");
     lastTranscriptRef.current = "";
     resetTranscript();
-    setTimeout(() => {
-      startListening();
-    }, 500); // Small delay for natural feel
+    if (!isListening) {
+      setTimeout(() => {
+        startListening();
+      }, 400);
+    }
   }
 
   function submitAnswer(text: string) {
