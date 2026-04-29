@@ -339,3 +339,29 @@ export async function aiGenerateVideoNotes(data: { video_url: string; video_titl
     };
   }
 }
+
+/* ------- Career Analyzer ------- */
+export async function aiCareerAnalyze(data: { target_role: string; target_company?: string; current_skills: string[] }) {
+  const result = await callAI({
+    model: "google/gemini-1.5-flash",
+    messages: [
+      { role: "system", content: `You are a career advisor for tech students. Analyze the gap between current skills and target job requirements. Return ONLY valid JSON.` },
+      { role: "user", content: `Student's current skills: ${data.current_skills.join(", ") || "None listed"}
+Target role: ${data.target_role}
+${data.target_company ? `Target company: ${data.target_company}` : ""}
+
+Return JSON with this exact structure:
+{
+  "skill_gap": ["skill1", "skill2"],
+  "courses": [{"title": "course name", "platform": "Coursera/Udemy/etc", "url": "full url", "why": "reason"}],
+  "practice": [{"platform": "LeetCode/GFG/etc", "focus": "what to practice", "url": "url"}],
+  "youtube_searches": ["search query 1", "search query 2"],
+  "roadmap": ["Step 1: ...", "Step 2: ..."],
+  "match_percentage": 65
+}` },
+    ],
+  });
+  const raw = result?.choices?.[0]?.message?.content ?? "{}";
+  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+  try { return JSON.parse(cleaned); } catch { return { skill_gap: [], courses: [], practice: [], youtube_searches: [], roadmap: [raw], match_percentage: 0 }; }
+}
