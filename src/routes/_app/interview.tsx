@@ -51,52 +51,56 @@ function InterviewPage() {
     resetTranscript,
   } = useSpeech();
 
-  // --- Auto-detect silence and submit answer ---
+  // --- STRICT MIC CONTROL: OFF during speaking/thinking, ON only during listening ---
+  useEffect(() => {
+    if (phase === "speaking" || phase === "thinking" || phase === "done") {
+      // ALWAYS stop mic when it's NOT user's turn
+      stopListening();
+    }
+  }, [phase]);
+
+  // --- When AI finishes speaking, start user's turn ---
+  useEffect(() => {
+    if (phase === "speaking" && !isSpeaking) {
+      // AI done speaking → give mic to user
+      setPhase("listening");
+      lastTranscriptRef.current = "";
+      resetTranscript();
+      setTimeout(() => startListening(), 500);
+    }
+  }, [isSpeaking, phase]);
+
+  // --- Auto-detect silence: 3 seconds of no new speech → auto-submit ---
   useEffect(() => {
     if (phase !== "listening") return;
+    if (!speechTranscript || speechTranscript === lastTranscriptRef.current) return;
 
-    if (speechTranscript && speechTranscript !== lastTranscriptRef.current) {
-      lastTranscriptRef.current = speechTranscript;
+    lastTranscriptRef.current = speechTranscript;
 
-      // Clear previous timer
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    // Clear previous timer
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-      // Set a new silence timer — if user stops talking for 2.5 seconds, auto-submit
-      silenceTimerRef.current = setTimeout(() => {
-        const finalAnswer = lastTranscriptRef.current.trim();
-        if (finalAnswer.length > 2) {
-          stopListening();
-          submitAnswer(finalAnswer);
-        }
-      }, 2500);
-    }
+    // 3 seconds of silence → submit
+    silenceTimerRef.current = setTimeout(() => {
+      const finalAnswer = lastTranscriptRef.current.trim();
+      if (finalAnswer.length > 2) {
+        stopListening();
+        submitAnswer(finalAnswer);
+      }
+    }, 3000);
 
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
   }, [speechTranscript, phase]);
 
-  // --- Auto-scroll transcript ---
+  // --- Auto-scroll ---
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, phase]);
 
-  // --- When AI finishes speaking, auto-start mic ---
-  useEffect(() => {
-    if (phase === "speaking" && !isSpeaking) {
-      startMicForAnswer();
-    }
-  }, [isSpeaking, phase]);
-
-  // NO mic during speaking phase — prevents feedback loop from speakers
-
   function interruptAI() {
-    // User taps to interrupt — stop AI voice, start mic
     stopSpeaking();
-    startMicForAnswer();
-  }
-
-  function startMicForAnswer() {
     setPhase("listening");
     lastTranscriptRef.current = "";
     resetTranscript();
@@ -104,12 +108,15 @@ function InterviewPage() {
   }
 
   function submitAnswer(text: string) {
+    // Stop mic FIRST
     stopListening();
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    
     const next: Turn[] = [...transcript, { role: "candidate", content: text }];
     setTranscript(next);
     lastTranscriptRef.current = "";
     resetTranscript();
-    setPhase("thinking");
+    setPhase("thinking"); // This triggers mic OFF via the effect above
     turnMutation.mutate(next);
   }
 
