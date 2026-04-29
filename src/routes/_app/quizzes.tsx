@@ -21,6 +21,7 @@ export const Route = createFileRoute("/_app/quizzes")({
 
 type Question = { question: string; options: string[]; correct_index: number; explanation: string };
 type Mode = "standard" | "logic";
+type Difficulty = "beginner" | "intermediate" | "advanced" | "expert" | "elite";
 
 const KG_API_BASE = "https://outstandingom-knowledge-graph-env.hf.space";
 
@@ -31,7 +32,7 @@ function QuizPage() {
   
   const [mode, setMode] = useState<Mode>("standard");
   const [topic, setTopic] = useState("");
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [difficulty, setDifficulty] = useState<Difficulty>("intermediate");
   const [count, setCount] = useState("5");
   
   const [quiz, setQuiz] = useState<{ id?: string; topic: string; questions?: Question[]; observation?: string; mode: Mode } | null>(null);
@@ -52,7 +53,7 @@ function QuizPage() {
   const generate = useMutation({
     mutationFn: async () => {
       if (mode === "standard") {
-        return genFn({ data: { topic: topic.trim(), difficulty, count: parseInt(count, 10) } });
+        return genFn({ data: { topic: topic.trim(), difficulty: difficulty as any, count: parseInt(count, 10) } });
       } else {
         const resp = await fetch(`${KG_API_BASE}/reset`, { method: "POST" });
         if (!resp.ok) throw new Error("Knowledge Graph Engine failed to reset");
@@ -72,7 +73,6 @@ function QuizPage() {
           setQuiz({ topic: topic.trim(), questions: r.questions, mode: "standard" });
         }
       } else {
-        // Knowledge Graph logic
         const kgTopic = "Knowledge Graph Reasoning";
         if (user) {
           let kgQuizId = "";
@@ -237,7 +237,6 @@ function QuizPage() {
         </div>
       );
     } else {
-      // Logic Reasoning Mode (KG)
       return (
         <div className="p-6 lg:p-10 max-w-3xl mx-auto">
           <PageHeader
@@ -334,15 +333,17 @@ function QuizPage() {
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
                   <SelectTrigger className="h-11 flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
+                    <SelectItem value="beginner">🌱 Beginner</SelectItem>
+                    <SelectItem value="intermediate">🚀 Intermediate</SelectItem>
+                    <SelectItem value="advanced">🔥 Advanced</SelectItem>
+                    <SelectItem value="expert">🏆 Expert</SelectItem>
+                    <SelectItem value="elite">👑 Elite (Extra)</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={count} onValueChange={setCount}>
                   <SelectTrigger className="h-11 flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {[3, 5, 8, 10].map(n => <SelectItem key={n} value={String(n)}>{n} questions</SelectItem>)}
+                    {[3, 5, 8, 10, 15].map(n => <SelectItem key={n} value={String(n)}>{n} questions</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Button
