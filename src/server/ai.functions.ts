@@ -7,9 +7,9 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const KG_BASE_URL = "https://outstandingom-knowledge-graph-env.hf.space";
 
 async function callAI(body: Record<string, unknown>) {
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
+  const lovableKey = import.meta.env.VITE_LOVABLE_API_KEY || "";
+  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyD2r5Yte8rMRdA-AwACq6MQ-yntnF3Ww_I";
+  const groqKey = import.meta.env.VITE_GROQ_API_KEY || "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";
 
   if (groqKey) {
     try {
