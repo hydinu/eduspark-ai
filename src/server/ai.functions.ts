@@ -91,7 +91,7 @@ export const aiChat = createServerFn({ method: "POST" })
             type: "object",
             properties: {
               topic: { type: "string", description: "The subject of the quiz" },
-              difficulty: { type: "string", enum: ["easy", "medium", "hard"], default: "medium" },
+              difficulty: { type: "string", enum: ["beginner", "intermediate", "advanced", "expert", "elite"], default: "intermediate" },
               count: { type: "integer", minimum: 3, maximum: 10, default: 5 }
             },
             required: ["topic"]
@@ -173,7 +173,7 @@ export const aiSuggestCourses = createServerFn({ method: "POST" })
 /* ------- Quiz generation ------- */
 const quizSchema = z.object({
   topic: z.string().trim().min(2).max(200),
-  difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+  difficulty: z.enum(["beginner", "intermediate", "advanced", "expert", "elite"]).default("intermediate"),
   count: z.number().int().min(3).max(15).default(5),
 });
 
