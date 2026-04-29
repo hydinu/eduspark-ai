@@ -183,7 +183,14 @@ export const aiGenerateQuiz = createServerFn({ method: "POST" })
     const result = await callAI({
       model: "google/gemini-1.5-flash",
       messages: [
-        { role: "system", content: "You generate accurate, educational multiple-choice quizzes." },
+        { 
+          role: "system", 
+          content: `You generate accurate, educational multiple-choice quizzes.
+          SPECIAL HANDLING FOR APTITUDE/NUMERICAL TOPICS:
+          - If the topic relates to Aptitude, Math, or Numerical Reasoning, generate quantitative problems.
+          - Ensure options are realistic and include common distractor answers.
+          - The 'explanation' field MUST include the step-by-step calculation or logical derivation of the answer.`
+        },
         { role: "user", content: `Generate ${data.count} ${data.difficulty}-difficulty multiple-choice questions about "${data.topic}". Each must have 4 options with exactly one correct. Include a short explanation.` },
       ],
       tools: [{
