@@ -185,11 +185,12 @@ export const aiGenerateQuiz = createServerFn({ method: "POST" })
       messages: [
         { 
           role: "system", 
-          content: `You generate accurate, educational multiple-choice quizzes.
-          SPECIAL HANDLING FOR APTITUDE/NUMERICAL TOPICS:
-          - If the topic relates to Aptitude, Math, or Numerical Reasoning, generate quantitative problems.
-          - Ensure options are realistic and include common distractor answers.
-          - The 'explanation' field MUST include the step-by-step calculation or logical derivation of the answer.`
+          content: `You are a universal expert quiz generator capable of creating high-quality assessments for ANY field:
+          - ACADEMIC: History, Science, Literature, Philosophy, etc.
+          - TECHNICAL: Coding, Engineering, Data Science, AI.
+          - PROFESSIONAL: Business, Marketing, Aptitude, Finance.
+          - APTITUDE: For math/logic, provide step-by-step calculations in the explanation.
+          Always ensure 4 distinct options with one unambiguously correct answer and a high-quality educational explanation.`
         },
         { role: "user", content: `Generate ${data.count} ${data.difficulty}-difficulty multiple-choice questions about "${data.topic}". Each must have 4 options with exactly one correct. Include a short explanation.` },
       ],
