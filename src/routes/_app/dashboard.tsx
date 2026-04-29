@@ -1,12 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/AppShell";
-import { LayoutDashboard, MessageSquare, BookOpen, Brain, Mic, TrendingUp, Sparkles, ArrowRight, Trophy, Flame } from "lucide-react";
+import { HistoryModal, type HistoryType } from "@/components/history/HistoryModal";
+import {
+  LayoutDashboard, MessageSquare, BookOpen, Brain, Mic,
+  TrendingUp, Sparkles, ArrowRight, Trophy, Flame, ChevronRight,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
   component: Dashboard,
@@ -14,6 +20,7 @@ export const Route = createFileRoute("/_app/dashboard")({
 
 function Dashboard() {
   const { user } = useAuth();
+  const [historyType, setHistoryType] = useState<HistoryType>(null);
 
   const { data: stats } = useQuery({
     queryKey: ["dashboard-stats", user?.id],
@@ -39,7 +46,9 @@ function Dashboard() {
         coursesDone: c.filter(x => x.status === "completed").length,
         recentAttempts: att.slice(0, 5),
         interviewCount: interviews.data?.length ?? 0,
-        avgInterviewScore: interviews.data?.length ? Math.round(interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length) : 0,
+        avgInterviewScore: interviews.data?.length
+          ? Math.round(interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length)
+          : 0,
       };
     },
   });
@@ -57,57 +66,121 @@ function Dashboard() {
       <PageHeader
         icon={LayoutDashboard}
         title={`${greet}, ${name} 👋`}
-        description="Here's your learning at a glance."
+        description="Here's your learning at a glance. Click any stat to see full history."
       />
 
       {/* Quick action cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <ActionCard to="/chat" icon={MessageSquare} title="Ask AI Tutor" subtitle="Get instant answers" gradient />
-        <ActionCard to="/courses" icon={BookOpen} title="Find Courses" subtitle="Personalized picks" />
-        <ActionCard to="/quizzes" icon={Brain} title="Take a Quiz" subtitle="Test yourself" />
-        <ActionCard to="/interview" icon={Mic} title="Mock Interview" subtitle="Practice & improve" />
+        <ActionCard to="/chat"      icon={MessageSquare} title="Ask AI Tutor"    subtitle="Get instant answers" gradient />
+        <ActionCard to="/courses"   icon={BookOpen}      title="Find Courses"    subtitle="Personalized picks" />
+        <ActionCard to="/quizzes"   icon={Brain}         title="Take a Quiz"     subtitle="Test yourself" />
+        <ActionCard to="/interview" icon={Mic}           title="Mock Interview"  subtitle="Practice & improve" />
       </div>
 
-      {/* Stats */}
+      {/* ── Clickable stat cards ── */}
       <div className="grid lg:grid-cols-3 gap-5 mb-8">
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-muted-foreground">Average quiz score</span>
-            <Trophy className="h-4 w-4 text-warning" />
-          </div>
-          <div className="text-3xl font-bold">{stats?.avgPct ?? 0}%</div>
-          <Progress value={stats?.avgPct ?? 0} className="mt-3 h-2" />
-          <p className="text-xs text-muted-foreground mt-2">{stats?.attempts ?? 0} attempts so far</p>
-        </Card>
+        {/* Quiz score card */}
+        <button
+          id="dashboard-quiz-stat-card"
+          onClick={() => setHistoryType("quiz")}
+          className="text-left group"
+          title="Click to view quiz history"
+        >
+          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-muted-foreground">Average quiz score</span>
+              <div className="flex items-center gap-1">
+                <Trophy className="h-4 w-4 text-warning" />
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+            </div>
+            <div className="text-3xl font-bold">{stats?.avgPct ?? 0}%</div>
+            <Progress value={stats?.avgPct ?? 0} className="mt-3 h-2" />
+            <p className="text-xs text-muted-foreground mt-2">
+              {stats?.attempts ?? 0} attempts so far
+              <span className="text-primary ml-2 font-medium group-hover:underline">View history →</span>
+            </p>
+          </Card>
+        </button>
 
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-muted-foreground">Courses tracked</span>
-            <BookOpen className="h-4 w-4 text-primary" />
-          </div>
-          <div className="text-3xl font-bold">{(stats?.coursesBookmarked ?? 0) + (stats?.coursesInProgress ?? 0) + (stats?.coursesDone ?? 0)}</div>
-          <div className="flex gap-3 mt-3 text-xs text-muted-foreground">
-            <span>📌 {stats?.coursesBookmarked ?? 0}</span>
-            <span>🚀 {stats?.coursesInProgress ?? 0}</span>
-            <span>✅ {stats?.coursesDone ?? 0}</span>
-          </div>
-        </Card>
+        {/* Courses tracked card */}
+        <button
+          id="dashboard-courses-stat-card"
+          onClick={() => setHistoryType("courses")}
+          className="text-left group"
+          title="Click to view course history"
+        >
+          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-muted-foreground">Courses tracked</span>
+              <div className="flex items-center gap-1">
+                <BookOpen className="h-4 w-4 text-primary" />
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+            </div>
+            <div className="text-3xl font-bold">
+              {(stats?.coursesBookmarked ?? 0) + (stats?.coursesInProgress ?? 0) + (stats?.coursesDone ?? 0)}
+            </div>
+            <div className="flex gap-4 mt-3">
+              {[
+                { emoji: "📌", label: "Saved",      val: stats?.coursesBookmarked ?? 0 },
+                { emoji: "🚀", label: "In progress", val: stats?.coursesInProgress ?? 0 },
+                { emoji: "✅", label: "Done",        val: stats?.coursesDone ?? 0 },
+              ].map(s => (
+                <div key={s.label} className="text-center">
+                  <div className="text-lg font-bold">{s.val}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-primary mt-3 font-medium group-hover:underline">View history →</p>
+          </Card>
+        </button>
 
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-muted-foreground">Interview practice</span>
-            <Flame className="h-4 w-4 text-destructive" />
-          </div>
-          <div className="text-3xl font-bold">{stats?.interviewCount ?? 0}</div>
-          <p className="text-xs text-muted-foreground mt-3">Avg score: <span className="font-semibold text-foreground">{stats?.avgInterviewScore ?? 0}/100</span></p>
-        </Card>
+        {/* Interview card */}
+        <button
+          id="dashboard-interview-stat-card"
+          onClick={() => setHistoryType("interview")}
+          className="text-left group"
+          title="Click to view interview history"
+        >
+          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-muted-foreground">Interview practice</span>
+              <div className="flex items-center gap-1">
+                <Flame className="h-4 w-4 text-destructive" />
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+            </div>
+            <div className="text-3xl font-bold">{stats?.interviewCount ?? 0}</div>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all",
+                    (stats?.avgInterviewScore ?? 0) >= 80 ? "bg-emerald-500"
+                    : (stats?.avgInterviewScore ?? 0) >= 50 ? "bg-amber-500" : "bg-red-400")}
+                  style={{ width: `${stats?.avgInterviewScore ?? 0}%` }}
+                />
+              </div>
+              <span className="text-xs font-medium">{stats?.avgInterviewScore ?? 0}/100</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Avg score
+              <span className="text-primary ml-2 font-medium group-hover:underline">View history →</span>
+            </p>
+          </Card>
+        </button>
       </div>
 
-      {/* Recent activity */}
+      {/* Recent quiz activity */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Recent quiz attempts</h2>
-          <Link to="/quizzes"><Button variant="ghost" size="sm">View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button></Link>
+          <h2 className="font-semibold flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-primary" /> Recent quiz attempts
+          </h2>
+          <Button variant="ghost" size="sm" onClick={() => setHistoryType("quiz")}>
+            View all <ArrowRight className="ml-1 h-3.5 w-3.5" />
+          </Button>
         </div>
         {(!stats?.recentAttempts || stats.recentAttempts.length === 0) ? (
           <div className="py-12 text-center text-muted-foreground">
@@ -120,14 +193,14 @@ function Dashboard() {
             {stats.recentAttempts.map((a, i) => {
               const pct = Math.round((a.score / a.total) * 100);
               return (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary/80 transition-colors">
                   <div>
                     <div className="text-sm font-medium">Quiz attempt</div>
                     <div className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold">{a.score}/{a.total}</div>
-                    <div className={`text-xs ${pct >= 70 ? "text-success" : pct >= 50 ? "text-warning" : "text-destructive"}`}>{pct}%</div>
+                    <div className={`text-xs font-medium ${pct >= 70 ? "text-emerald-500" : pct >= 50 ? "text-amber-500" : "text-red-500"}`}>{pct}%</div>
                   </div>
                 </div>
               );
@@ -135,6 +208,9 @@ function Dashboard() {
           </div>
         )}
       </Card>
+
+      {/* History modal */}
+      <HistoryModal type={historyType} onClose={() => setHistoryType(null)} />
     </div>
   );
 }
@@ -142,12 +218,12 @@ function Dashboard() {
 function ActionCard({ to, icon: Icon, title, subtitle, gradient }: { to: string; icon: any; title: string; subtitle: string; gradient?: boolean }) {
   return (
     <Link to={to as any}>
-      <Card className={`p-5 hover:shadow-soft transition-all group cursor-pointer h-full ${gradient ? "bg-gradient-primary text-primary-foreground border-0" : ""}`}>
-        <div className={`h-10 w-10 rounded-lg flex items-center justify-center mb-3 ${gradient ? "bg-white/20" : "bg-primary-soft text-primary"}`}>
+      <Card className={cn("p-5 hover:shadow-soft transition-all group cursor-pointer h-full", gradient ? "bg-gradient-primary text-primary-foreground border-0" : "")}>
+        <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center mb-3", gradient ? "bg-white/20" : "bg-primary-soft text-primary")}>
           <Icon className="h-5 w-5" />
         </div>
         <div className="font-semibold">{title}</div>
-        <div className={`text-xs mt-0.5 ${gradient ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{subtitle}</div>
+        <div className={cn("text-xs mt-0.5", gradient ? "text-primary-foreground/80" : "text-muted-foreground")}>{subtitle}</div>
         <ArrowRight className="h-4 w-4 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" />
       </Card>
     </Link>

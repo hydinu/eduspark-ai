@@ -32,7 +32,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       session,
       loading,
-      signOut: async () => { await supabase.auth.signOut(); },
+      signOut: async () => {
+        localStorage.removeItem("eduspark_guest");
+        await supabase.auth.signOut();
+      },
     }}>
       {children}
     </Ctx.Provider>

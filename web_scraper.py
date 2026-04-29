@@ -45,54 +45,103 @@ HEADERS = {
 def search_duckduckgo(topic: str, num_results: int = 8) -> list[dict]:
     """
     Search DuckDuckGo HTML (no API key needed) for educational content.
+    Falls back to curated direct links if DDG returns nothing.
     """
     site_filter = " OR ".join(f"site:{s}" for s in EDU_SITES[:6])
     query = f"{topic} tutorial {site_filter}"
     url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
 
+    results = []
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
+
+        # DuckDuckGo HTML structure — try multiple selectors
+        blocks = (
+            soup.find_all("div", class_="result__body")
+            or soup.find_all("div", class_="results_links_deep")
+            or soup.find_all("div", attrs={"data-nir": True})
+            or soup.find_all("article")  # newer DDG layout
+        )
+
+        for block in blocks[:num_results * 2]:   # fetch extra, filter below
+            # title / link
+            title_el = (
+                block.find("a", class_="result__a")
+                or block.find("a", class_="result__url")
+                or block.find("h2", class_="result__title")
+                or block.find("a")
+            )
+            snippet_el = (
+                block.find("a", class_="result__snippet")
+                or block.find("div", class_="result__snippet")
+                or block.find("span", class_="result__snippet")
+            )
+            if not title_el:
+                continue
+
+            href = title_el.get("href", "")
+            # DuckDuckGo uses redirect URLs — extract real URL
+            if "uddg=" in href:
+                try:
+                    real_url = unquote(href.split("uddg=")[1].split("&")[0])
+                except Exception:
+                    real_url = href
+            else:
+                real_url = href
+
+            if not real_url.startswith("http"):
+                continue
+
+            parsed = urlparse(real_url)
+            domain = parsed.netloc.replace("www.", "")
+
+            # Skip non-edu sites
+            if not any(site in domain for site in EDU_SITES):
+                continue
+
+            site_label = next((v for k, v in SITE_LABELS.items() if k in domain), domain)
+
+            results.append({
+                "title": title_el.get_text(strip=True),
+                "url": real_url,
+                "site": domain,
+                "site_label": site_label,
+                "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                "favicon": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+            })
+
+            if len(results) >= num_results:
+                break
+
     except Exception as e:
         print(f"[scraper] DuckDuckGo search failed: {e}")
-        return []
 
-    results = []
-    for block in soup.find_all("div", class_="result__body")[:num_results]:
-        title_el = block.find("a", class_="result__a")
-        snippet_el = block.find("a", class_="result__snippet")
-        if not title_el:
-            continue
+    # ── Fallback: curated direct site search links ─────────────────────────
+    if not results:
+        print(f"[scraper] DDG returned 0 results, using curated fallback for: {topic}")
+        q = quote(topic)
+        fallback_sites = [
+            ("geeksforgeeks.org",      "GeeksForGeeks",   f"https://www.geeksforgeeks.org/?s={q}"),
+            ("freecodecamp.org",       "freeCodeCamp",    f"https://www.freecodecamp.org/news/search/?query={q}"),
+            ("developer.mozilla.org", "MDN Web Docs",    f"https://developer.mozilla.org/en-US/search?q={q}"),
+            ("w3schools.com",          "W3Schools",       f"https://www.w3schools.com/search/search_result.php?search={q}"),
+            ("realpython.com",         "Real Python",     f"https://realpython.com/search?q={q}"),
+            ("tutorialspoint.com",     "Tutorialspoint",  f"https://www.tutorialspoint.com/search/search_result.php?search={q}"),
+            ("css-tricks.com",         "CSS-Tricks",      f"https://css-tricks.com/?s={q}"),
+            ("towardsdatascience.com", "Towards Data Science", f"https://towardsdatascience.com/search?q={q}"),
+        ]
+        for domain, label, search_url in fallback_sites[:num_results]:
+            results.append({
+                "title": f"{topic} — {label}",
+                "url": search_url,
+                "site": domain,
+                "site_label": label,
+                "snippet": f"Search {label} for articles and tutorials on {topic}",
+                "favicon": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+            })
 
-        href = title_el.get("href", "")
-        # DuckDuckGo uses redirect URLs — extract real URL
-        if "uddg=" in href:
-            try:
-                real_url = unquote(href.split("uddg=")[1].split("&")[0])
-            except Exception:
-                real_url = href
-        else:
-            real_url = href
-
-        parsed = urlparse(real_url)
-        domain = parsed.netloc.replace("www.", "")
-
-        # Skip non-edu sites
-        if not any(site in domain for site in EDU_SITES):
-            continue
-
-        site_label = next((v for k, v in SITE_LABELS.items() if k in domain), domain)
-
-        results.append({
-            "title": title_el.get_text(strip=True),
-            "url": real_url,
-            "site": domain,
-            "site_label": site_label,
-            "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
-            "favicon": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
-        })
-
-    return results
+    return results[:num_results]
 
 
 def extract_with_requests(url: str) -> str:
@@ -128,6 +177,18 @@ async def extract_with_playwright(url: str) -> str:
     except ImportError:
         return extract_with_requests(url)
 
+    # Site-specific wait selectors for JS-heavy SPAs
+    parsed_domain = urlparse(url).netloc.replace("www.", "")
+    site_wait_selector = None
+    if "freecodecamp.org" in parsed_domain:
+        site_wait_selector = ".post-full-content, article, .post-content"
+    elif "geeksforgeeks.org" in parsed_domain:
+        site_wait_selector = ".article-page, .text, article"
+    elif "realpython.com" in parsed_domain:
+        site_wait_selector = "article, .article-body"
+    elif "towardsdatascience.com" in parsed_domain or "medium.com" in parsed_domain:
+        site_wait_selector = "article"
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         try:
@@ -136,37 +197,71 @@ async def extract_with_playwright(url: str) -> str:
                 extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
             )
             page = await ctx.new_page()
-            await page.goto(url, timeout=25000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)   # let JS render
+
+            # Navigate — networkidle for SPAs, domcontentloaded otherwise
+            try:
+                await page.goto(url, timeout=30000, wait_until="networkidle")
+            except Exception:
+                try:
+                    await page.goto(url, timeout=25000, wait_until="domcontentloaded")
+                    await page.wait_for_timeout(3500)
+                except Exception:
+                    pass
+
+            # Wait for site-specific selector if known
+            if site_wait_selector:
+                try:
+                    await page.wait_for_selector(site_wait_selector, timeout=8000)
+                except Exception:
+                    pass  # continue anyway
+
+            await page.wait_for_timeout(1500)  # extra buffer for JS rendering
 
             text = await page.evaluate("""() => {
                 // Strip clutter
                 ['nav','footer','header','aside','script','style',
                  '.ads','#ads','.advertisement','.cookie-banner',
-                 '.popup','[class*="cookie"]','[id*="cookie"]'].forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => el.remove());
+                 '.popup','[class*="cookie"]','[id*="cookie"]',
+                 '.sidebar','#sidebar','.related-posts','.newsletter',
+                 '[class*="banner"]'].forEach(sel => {
+                    try { document.querySelectorAll(sel).forEach(el => el.remove()); } catch(e) {}
                 });
-                // Try semantic content selectors
+                // Try semantic content selectors in priority order
                 const selectors = [
-                    'article', 'main', '[role="main"]',
-                    '.article-content', '.post-content', '.entry-content',
-                    '#article-content', '#main-content', '.content-body',
-                    '#content', '.content', 'section'
+                    'article',
+                    '[role="main"]',
+                    'main',
+                    '.post-full-content',
+                    '.article-content',
+                    '.post-content',
+                    '.entry-content',
+                    '.article-body',
+                    '.article-page',
+                    '#article-content',
+                    '#main-content',
+                    '.content-body',
+                    '.prose',
+                    '#content',
+                    '.content',
+                    '.post-body',
+                    '.text',
+                    'section'
                 ];
                 for (const sel of selectors) {
                     const el = document.querySelector(sel);
-                    if (el && el.innerText && el.innerText.length > 300) {
-                        return el.innerText.substring(0, 7000);
+                    if (el && el.innerText && el.innerText.trim().length > 200) {
+                        return el.innerText.substring(0, 8000);
                     }
                 }
-                return document.body.innerText.substring(0, 7000);
+                return document.body.innerText.substring(0, 8000);
             }""")
             return text if text else ""
         except Exception as e:
             print(f"[playwright] Error extracting {url}: {e}")
-            return extract_with_requests(url)   # fallback
+            return extract_with_requests(url)  # fallback
         finally:
             await browser.close()
+
 
 
 def extract_page_content(url: str) -> str:

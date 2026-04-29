@@ -3,6 +3,7 @@ EduSpark AI — Python Backend v3
 - Primary AI: Groq (free, open-source Llama 3, 14,400 req/day)
 - Fallback: Direct transcript parsing (NO AI, always works)
 - Auto port management: kills old process if port is busy
+- Database: Supabase (PostgreSQL)
 """
 
 import os
@@ -13,18 +14,44 @@ import signal
 import subprocess
 import sys
 import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes
+from supabase import create_client, Client
+
+# Load .env file automatically
+load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
 YOUTUBE_API_KEY = os.getenv("VITE_YOUTUBE_API_KEY", "AIzaSyB1huPRyS6SOq_vDvrgNCSfK6eV4k4x3jE")
-PORT           = int(os.getenv("BACKEND_PORT", "8000"))
+PORT            = int(os.getenv("BACKEND_PORT", "8000"))
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# ── Supabase ──────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://irasryypizosrzepkfrq.supabase.co")
+# Try all possible key env var names (server-side has no VITE_ prefix)
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    or os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or ""
+)
+
+_supabase: Client | None = None
+
+def get_supabase() -> Client:
+    """Lazily initialize and return the Supabase client."""
+    global _supabase
+    if _supabase is None:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be set in .env")
+        _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="EduSpark AI Backend", version="3.0")
@@ -224,9 +251,240 @@ def root():
     return {
         "status": "EduSpark AI Backend v3 running",
         "ai_provider": "Groq (Llama 3)" if GROQ_API_KEY else "Direct transcript parsing (no AI key needed)",
+        "database": "Supabase (PostgreSQL)" if SUPABASE_URL else "not configured",
         "port": PORT,
     }
 
+
+@app.get("/api/db-status")
+def db_status():
+    """
+    Health-check endpoint that verifies live connectivity to Supabase.
+    Performs a lightweight SELECT on the profiles table.
+    """
+    try:
+        sb = get_supabase()
+        # Lightweight ping — select 1 row limit from profiles
+        result = sb.table("profiles").select("id").limit(1).execute()
+        return {
+            "connected": True,
+            "supabase_url": SUPABASE_URL,
+            "database": "Supabase (PostgreSQL)",
+            "tables_accessible": ["profiles", "chat_conversations", "chat_messages",
+                                   "quizzes", "quiz_attempts", "interview_sessions", "course_progress"],
+            "message": "✅ Supabase database connected successfully",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail={
+            "connected": False,
+            "supabase_url": SUPABASE_URL,
+            "error": str(e),
+            "message": "❌ Supabase connection failed",
+        })
+
+
+@app.get("/api/health")
+def health_check():
+    """Full health check for all services."""
+    services = {}
+
+    # Check Supabase
+    try:
+        sb = get_supabase()
+        sb.table("profiles").select("id").limit(1).execute()
+        services["supabase"] = {"status": "ok", "url": SUPABASE_URL}
+    except Exception as e:
+        services["supabase"] = {"status": "error", "error": str(e)}
+
+    # Check Groq API key
+    services["groq"] = {
+        "status": "ok" if GROQ_API_KEY else "not_configured",
+        "model": "llama-3.3-70b-versatile" if GROQ_API_KEY else None,
+    }
+
+    # Check YouTube API key
+    services["youtube"] = {
+        "status": "ok" if YOUTUBE_API_KEY else "not_configured",
+    }
+
+    overall = "healthy" if all(
+        s["status"] == "ok" for s in services.values()
+    ) else "degraded"
+
+    return {"overall": overall, "services": services}
+
+
+# ── History Routes ─────────────────────────────────────────────────────────────
+# These endpoints allow the frontend to fetch/save history via the backend.
+# They use the user's JWT token (passed as Authorization header) so Supabase
+# RLS is enforced per-user.
+
+def _user_supabase(authorization: str | None):
+    """Create a Supabase client scoped to the user's JWT token."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization.replace("Bearer ", "")
+    return create_client(SUPABASE_URL, SUPABASE_KEY, options={
+        "global": {"headers": {"Authorization": f"Bearer {token}"}}
+    })
+
+
+from fastapi import Header
+from typing import Optional
+
+
+@app.get("/api/history/quizzes")
+def get_quiz_history(
+    limit: int = Query(default=50, le=100),
+    authorization: Optional[str] = Header(default=None)
+):
+    """Fetch all quiz attempts for the authenticated user."""
+    try:
+        sb = _user_supabase(authorization)
+        r = (sb.table("quiz_attempts")
+               .select("*, quizzes(topic, difficulty, questions)")
+               .order("created_at", ascending=False)
+               .limit(limit)
+               .execute())
+        return {"data": r.data, "count": len(r.data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history/interviews")
+def get_interview_history(
+    limit: int = Query(default=50, le=100),
+    authorization: Optional[str] = Header(default=None)
+):
+    """Fetch all interview sessions for the authenticated user."""
+    try:
+        sb = _user_supabase(authorization)
+        r = (sb.table("interview_sessions")
+               .select("*")
+               .order("created_at", ascending=False)
+               .limit(limit)
+               .execute())
+        return {"data": r.data, "count": len(r.data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history/courses")
+def get_course_history(
+    authorization: Optional[str] = Header(default=None)
+):
+    """Fetch all course progress records for the authenticated user."""
+    try:
+        sb = _user_supabase(authorization)
+        r = (sb.table("course_progress")
+               .select("*")
+               .order("updated_at", ascending=False)
+               .execute())
+        return {"data": r.data, "count": len(r.data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history/dashboard")
+def get_dashboard_stats(
+    authorization: Optional[str] = Header(default=None)
+):
+    """
+    Aggregate dashboard stats for the authenticated user:
+    - Quiz average score & attempts
+    - Course progress counts
+    - Interview count & average score
+    """
+    try:
+        sb = _user_supabase(authorization)
+
+        # Fetch in parallel using individual queries
+        attempts_r  = sb.table("quiz_attempts").select("score,total,created_at").order("created_at", ascending=False).limit(20).execute()
+        quiz_r      = sb.table("quizzes").select("id", count="exact", head=True).execute()
+        courses_r   = sb.table("course_progress").select("status").execute()
+        interview_r = sb.table("interview_sessions").select("score,created_at").order("created_at", ascending=False).limit(5).execute()
+
+        att = attempts_r.data or []
+        total_score    = sum(a["score"] for a in att)
+        total_possible = sum(a["total"] for a in att)
+        avg_pct = round((total_score / total_possible) * 100) if total_possible else 0
+
+        c = courses_r.data or []
+        interviews = interview_r.data or []
+
+        return {
+            "quiz": {
+                "avg_pct": avg_pct,
+                "attempts": len(att),
+                "quiz_count": quiz_r.count or 0,
+                "recent": att[:5],
+            },
+            "courses": {
+                "bookmarked":  sum(1 for x in c if x["status"] == "bookmarked"),
+                "in_progress": sum(1 for x in c if x["status"] == "in_progress"),
+                "completed":   sum(1 for x in c if x["status"] == "completed"),
+                "total":       len(c),
+            },
+            "interviews": {
+                "count": len(interviews),
+                "avg_score": round(sum(i["score"] or 0 for i in interviews) / len(interviews)) if interviews else 0,
+                "recent": interviews[:5],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CourseStatusUpdate(BaseModel):
+    status: str  # bookmarked | in_progress | completed
+
+
+@app.patch("/api/history/courses/{course_id}")
+def update_course_status(
+    course_id: str,
+    body: CourseStatusUpdate,
+    authorization: Optional[str] = Header(default=None)
+):
+    """Update the status of a course progress record."""
+    allowed = {"bookmarked", "in_progress", "completed"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of {allowed}")
+    try:
+        from datetime import datetime, timezone
+        sb = _user_supabase(authorization)
+        r = (sb.table("course_progress")
+               .update({"status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()})
+               .eq("id", course_id)
+               .execute())
+        return {"success": True, "data": r.data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/history/courses/{course_id}")
+def delete_course(
+    course_id: str,
+    authorization: Optional[str] = Header(default=None)
+):
+    """Delete a course progress record."""
+    try:
+        sb = _user_supabase(authorization)
+        sb.table("course_progress").delete().eq("id", course_id).execute()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/search-videos")
 def search_videos(topic: str = Query(..., min_length=1), max_results: int = Query(default=10, le=25)):

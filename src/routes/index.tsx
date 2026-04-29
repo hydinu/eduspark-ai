@@ -25,8 +25,8 @@ function Landing() {
           <span className="font-bold text-lg">EduMate AI</span>
         </Link>
         <div className="flex items-center gap-2">
-          <Link to="/dashboard"><Button variant="ghost">Open App</Button></Link>
-          <Link to="/dashboard"><Button>Get started</Button></Link>
+          <Link to="/auth"><Button variant="ghost">Sign In</Button></Link>
+          <Link to="/auth"><Button>Get started</Button></Link>
         </div>
       </nav>
 
@@ -50,15 +50,15 @@ function Landing() {
             and interview practice — all in one beautifully simple workspace.
           </p>
           <div className="mt-10 flex items-center justify-center gap-3">
-            <Link to="/dashboard">
+            <Link to="/auth">
               <Button size="lg" className="h-12 px-6 text-base shadow-glow">
                 Start learning free
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
             </Link>
-            <Link to="/dashboard">
+            <Link to="/auth">
               <Button size="lg" variant="outline" className="h-12 px-6 text-base">
-                Go to Dashboard
+                Sign In
               </Button>
             </Link>
           </div>
@@ -98,7 +98,7 @@ function Landing() {
         <div className="max-w-3xl mx-auto bg-gradient-primary rounded-3xl p-10 md:p-14 text-center shadow-glow">
           <h2 className="text-3xl md:text-4xl font-bold text-primary-foreground">Ready to level up your learning?</h2>
           <p className="mt-3 text-primary-foreground/80">Join students using AI to study smarter, not harder.</p>
-          <Link to="/dashboard" className="inline-block mt-7">
+          <Link to="/auth" className="inline-block mt-7">
             <Button size="lg" variant="secondary" className="h-12 px-6 text-base">
               Get started — it's free
               <ArrowRight className="ml-1.5 h-4 w-4" />
