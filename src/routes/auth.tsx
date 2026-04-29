@@ -70,10 +70,39 @@ function AuthPage() {
   };
 
   const handleGuest = () => {
-    // Store guest flag in localStorage, redirect to dashboard
     localStorage.setItem("eduspark_guest", "true");
     toast.success("Continuing as guest — your progress won't be saved.");
     navigate({ to: "/dashboard" });
+  };
+
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    const demoEmail = "demo@eduspark.ai";
+    const demoPass = "password123";
+
+    // Try login first
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email: demoEmail, password: demoPass });
+    
+    if (loginError) {
+      // If login fails, try signing up the demo account
+      const { error: signupError } = await supabase.auth.signUp({
+        email: demoEmail,
+        password: demoPass,
+        options: { data: { display_name: "Demo Student" } }
+      });
+      
+      if (signupError) {
+        toast.error("Demo login failed. Please use guest mode.");
+      } else {
+        toast.success("Demo account created! Logging in...");
+        await supabase.auth.signInWithPassword({ email: demoEmail, password: demoPass });
+        navigate({ to: "/dashboard" });
+      }
+    } else {
+      toast.success("Logged in as Demo User! 🎉");
+      navigate({ to: "/dashboard" });
+    }
+    setLoading(false);
   };
 
   const features = ["No credit card required", "Free forever", "AI-powered learning"];
@@ -253,17 +282,30 @@ function AuthPage() {
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          {/* Guest access */}
-          <Button
-            id="auth-guest-btn"
-            variant="outline"
-            className="w-full h-11 text-sm font-medium"
-            onClick={handleGuest}
-          >
-            <Sparkles className="h-4 w-4 mr-2 text-primary" />
-            Continue as Guest
-            <span className="ml-auto text-xs text-muted-foreground font-normal">No account needed</span>
-          </Button>
+          {/* Quick Access */}
+          <div className="grid grid-cols-2 gap-3 mt-6">
+            <Button
+              id="auth-demo-btn"
+              variant="outline"
+              className="h-11 text-xs font-medium border-primary/30 hover:bg-primary-soft/30"
+              onClick={handleDemoLogin}
+              disabled={loading}
+            >
+              <User className="h-4 w-4 mr-2 text-primary" />
+              Quick Demo
+            </Button>
+            
+            <Button
+              id="auth-guest-btn"
+              variant="outline"
+              className="h-11 text-xs font-medium"
+              onClick={handleGuest}
+              disabled={loading}
+            >
+              <Sparkles className="h-4 w-4 mr-2 text-primary" />
+              Guest Mode
+            </Button>
+          </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             {tab === "login" ? (
