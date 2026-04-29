@@ -3,44 +3,61 @@ import { z } from "zod";
 
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-async function callGateway(body: Record<string, unknown>) {
+async function callAI(body: Record<string, unknown>) {
   const lovableKey = process.env.LOVABLE_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
 
-  // Prefer Lovable gateway; fall back to direct Gemini API
+  // 1. Try Groq first (Fastest & high limits)
+  if (groqKey) {
+    try {
+      const groqBody = { 
+        ...body, 
+        model: body.tools ? "llama-3.3-70b-versatile" : "llama-3.1-8b-instant" 
+      };
+      const res = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(groqBody),
+      });
+      if (res.ok) return res.json();
+      console.warn("Groq failed, trying fallback...", res.status);
+    } catch (e) {
+      console.warn("Groq fetch error:", e);
+    }
+  }
+
+  // 2. Try Lovable Gateway
   if (lovableKey) {
     const res = await fetch(GATEWAY_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      if (res.status === 429) throw new Error("Rate limit reached. Try again in a moment.");
-      if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
-      const t = await res.text();
-      throw new Error(`AI gateway error (${res.status}): ${t.slice(0, 200)}`);
+    if (res.ok) return res.json();
+    if (res.status === 429) {
+       // If gateway is rate limited, we continue to direct Gemini
+       console.warn("Gateway rate limited, trying direct Gemini...");
     }
-    return res.json();
   }
 
+  // 3. Try Direct Gemini
   if (geminiKey) {
-    // Use Gemini-compatible OpenAI endpoint; swap model name
-    const geminiBody = { ...body, model: "gemini-2.0-flash" };
+    const geminiBody = { ...body, model: "gemini-1.5-flash" };
     const res = await fetch(GEMINI_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${geminiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),
     });
-    if (!res.ok) {
-      if (res.status === 429) throw new Error("Rate limit reached. Try again in a moment.");
-      const t = await res.text();
-      throw new Error(`Gemini API error (${res.status}): ${t.slice(0, 200)}`);
-    }
-    return res.json();
+    if (res.ok) return res.json();
+    if (res.status === 429) throw new Error("All AI providers are currently rate limited. Please try again in 60 seconds.");
+    const t = await res.text();
+    throw new Error(`AI Provider Error: ${t.slice(0, 200)}`);
   }
 
-  throw new Error("AI not configured. Add LOVABLE_API_KEY or GEMINI_API_KEY to your .env file to enable AI features.");
+  throw new Error("AI not configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.");
 }
 
 /* ------- Chat tutor ------- */
@@ -56,13 +73,47 @@ export const aiChat = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sys = {
       role: "system" as const,
-      content: `You are EduMate, a friendly, encouraging AI tutor for students. Explain concepts clearly with examples, suggest learning paths, and recommend free resources (YouTube channels, free courses, articles). Use markdown formatting with headings, lists and code blocks where useful. Keep answers focused and digestible.`,
+      content: `You are EduMate, a friendly, encouraging AI tutor for students. 
+      You can explain concepts, suggest learning paths, and recommend resources.
+      IMPORTANT: You have a tool to GENERATE REAL QUIZZES. If the user asks to be quizzed, tested, or wants to practice a topic, use the 'generate_quiz' tool. 
+      After the tool returns the quiz data, confirm to the user that you've prepared the quiz for them.
+      Use markdown formatting with headings, lists and code blocks where useful.`,
     };
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [sys, ...data.messages],
+      tools: [{
+        type: "function",
+        function: {
+          name: "generate_quiz",
+          description: "Generates a structured multiple-choice quiz on a specific topic.",
+          parameters: {
+            type: "object",
+            properties: {
+              topic: { type: "string", description: "The subject of the quiz" },
+              difficulty: { type: "string", enum: ["easy", "medium", "hard"], default: "medium" },
+              count: { type: "integer", minimum: 3, maximum: 10, default: 5 }
+            },
+            required: ["topic"]
+          }
+        }
+      }]
     });
-    const content = result?.choices?.[0]?.message?.content ?? "";
+
+    const msg = result?.choices?.[0]?.message;
+    if (msg?.tool_calls?.[0]) {
+      const toolCall = msg.tool_calls[0];
+      if (toolCall.function.name === "generate_quiz") {
+        const args = JSON.parse(toolCall.function.arguments);
+        const quizResult = await aiGenerateQuiz({ data: args });
+        return { 
+          content: msg.content || "I've prepared a quiz for you! Check it out below.",
+          quiz: { ...quizResult, topic: args.topic, difficulty: args.difficulty || "medium" } 
+        };
+      }
+    }
+
+    const content = msg?.content ?? "";
     return { content };
   });
 
@@ -75,8 +126,8 @@ const suggestSchema = z.object({
 export const aiSuggestCourses = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => suggestSchema.parse(d))
   .handler(async ({ data }) => {
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [
         { role: "system", content: "You are an expert learning-path designer. Suggest high-quality, mostly free learning resources." },
         { role: "user", content: `Suggest 6 learning resources for "${data.topic}" at ${data.level} level. Mix courses, YouTube tutorials, and hands-on projects.` },
@@ -129,8 +180,8 @@ const quizSchema = z.object({
 export const aiGenerateQuiz = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => quizSchema.parse(d))
   .handler(async ({ data }) => {
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [
         { role: "system", content: "You generate accurate, educational multiple-choice quizzes." },
         { role: "user", content: `Generate ${data.count} ${data.difficulty}-difficulty multiple-choice questions about "${data.topic}". Each must have 4 options with exactly one correct. Include a short explanation.` },
@@ -178,8 +229,8 @@ const interviewStartSchema = z.object({
 export const aiInterviewStart = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => interviewStartSchema.parse(d))
   .handler(async ({ data }) => {
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [
         { role: "system", content: `You are a friendly mock interviewer for ${data.role_topic}. Ask one focused question at a time. Be encouraging.` },
         { role: "user", content: "Start the interview with a brief greeting and your first question." },
@@ -206,7 +257,7 @@ export const aiInterviewTurn = createServerFn({ method: "POST" })
         content: t.content,
       })),
     ];
-    const result = await callGateway({ model: "google/gemini-3-flash-preview", messages });
+    const result = await callAI({ model: "google/gemini-1.5-flash", messages });
     return { content: result?.choices?.[0]?.message?.content ?? "" };
   });
 
@@ -228,43 +279,38 @@ export const aiGenerateVideoNotes = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => notesSchema.parse(d))
   .handler(async ({ data }) => {
     const prompt = `You are an expert study notes generator. Based on the YouTube video titled "${data.video_title}" (${data.video_url}), create comprehensive timestamped study notes.
-
 Generate realistic, educational timestamped study notes as if you had watched this video. Create 5-7 sections with meaningful timestamps.
 
-Return ONLY valid JSON in this exact format (no markdown, no extra text):
+Return ONLY valid JSON in this exact format:
 {
   "video_title": "${data.video_title.replace(/"/g, '\\"')}",
   "notes": [
     {
       "timestamp": "0:00",
       "section_title": "Introduction",
-      "content": "• Key point 1\\n• Key point 2\\n• Key point 3"
+      "content": "• Key point 1\\n• Key point 2"
     }
   ]
 }`;
 
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [
-        { role: "system", content: "You are a study notes generator. Always respond with valid JSON only, no markdown code blocks, no extra text." },
+        { role: "system", content: "You are a study notes generator. Always respond with valid JSON only." },
         { role: "user", content: prompt },
       ],
       temperature: 0.7,
     });
 
     const raw = result?.choices?.[0]?.message?.content ?? "";
-    // Strip any accidental markdown fences
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
 
     try {
-      const parsed = JSON.parse(cleaned);
-      if (!parsed.notes || !Array.isArray(parsed.notes)) throw new Error("Bad shape");
-      return parsed as { video_title: string; notes: Array<{ timestamp: string; section_title: string; content: string }> };
+      return JSON.parse(cleaned);
     } catch {
-      // Fallback: wrap raw text
       return {
         video_title: data.video_title,
-        notes: [{ timestamp: "0:00", section_title: "AI Study Notes", content: cleaned || "Could not parse notes. Please try again." }],
+        notes: [{ timestamp: "0:00", section_title: "AI Study Notes", content: cleaned }],
       };
     }
   });
@@ -273,8 +319,8 @@ export const aiInterviewFinish = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => interviewFinishSchema.parse(d))
   .handler(async ({ data }) => {
     const transcriptText = data.transcript.map((t) => `${t.role === "interviewer" ? "Interviewer" : "Candidate"}: ${t.content}`).join("\n\n");
-    const result = await callGateway({
-      model: "google/gemini-3-flash-preview",
+    const result = await callAI({
+      model: "google/gemini-1.5-flash",
       messages: [
         { role: "system", content: "You are a senior interviewer giving structured feedback." },
         { role: "user", content: `Evaluate this mock ${data.role_topic} interview. Give: (1) overall score 0-100, (2) 2-3 strengths, (3) 2-3 areas to improve, (4) one piece of actionable advice. Format with markdown.\n\n${transcriptText}` },

@@ -1,23 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { aiChat } from "@/server/ai.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/AppShell";
-import { MessageSquare, Send, Loader2, Sparkles, User as UserIcon, Bot, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { MessageSquare, Send, Loader2, Sparkles, User as UserIcon, Bot, Mic, MicOff, Volume2, VolumeX, Brain, CheckCircle2, XCircle, RotateCcw, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { useSpeech } from "@/hooks/useSpeech";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
 });
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Question = { question: string; options: string[]; correct_index: number; explanation: string };
+type QuizData = { topic: string; questions: Question[]; difficulty: string; id?: string };
+type Msg = { role: "user" | "assistant"; content: string; quiz?: QuizData };
 
 const SUGGESTIONS = [
   "Explain Big-O notation with examples",
@@ -29,6 +32,7 @@ const SUGGESTIONS = [
 function ChatPage() {
   const chat = useServerFn(aiChat);
   const { user } = useAuth();
+  const qc = useQueryClient();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -95,12 +99,34 @@ function ChatPage() {
 
   const send = useMutation({
     mutationFn: async (vars: { history: Msg[]; cid: string }) => {
-      const r = await chat({ data: { messages: vars.history } });
+      // Filter out quiz data from history to stay within token limits and match schema
+      const historyForAI = vars.history.map(m => ({ role: m.role, content: m.content }));
+      const r = await chat({ data: { messages: historyForAI } });
       return { r, cid: vars.cid };
     },
     onSuccess: async ({ r, cid }) => {
       const responseText = r.content || "...";
-      setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
+      const quiz = r.quiz as QuizData | undefined;
+      
+      // If a quiz was generated, save it to the DB so attempts can be recorded
+      let savedQuizId = undefined;
+      if (quiz && user) {
+        const { data, error } = await supabase.from("quizzes").insert({
+          user_id: user.id,
+          topic: quiz.topic,
+          difficulty: quiz.difficulty,
+          questions: quiz.questions as any,
+        }).select("id").single();
+        if (!error && data) savedQuizId = data.id;
+      }
+
+      const newMsg: Msg = { 
+        role: "assistant", 
+        content: responseText, 
+        quiz: quiz ? { ...quiz, id: savedQuizId } : undefined 
+      };
+
+      setMessages((prev) => [...prev, newMsg]);
       await persistMessage(cid, "assistant", responseText);
       if (voiceMode) speak(responseText);
     },
@@ -140,8 +166,8 @@ function ChatPage() {
       <div className="p-6 lg:p-10 pb-4 max-w-4xl mx-auto w-full flex items-start justify-between">
         <PageHeader
           icon={MessageSquare}
-          title="AI Tutor"
-          description="Ask anything — get clear explanations, study tips, and resources."
+          title="AI Tutor & Quiz Bot"
+          description="Ask for a quiz or get help with any subject."
         />
         {supported && (
           <Button
@@ -168,7 +194,7 @@ function ChatPage() {
                   <Sparkles className="h-7 w-7 text-primary-foreground" />
                 </div>
                 <h3 className="text-xl font-bold mb-1">How can I help you learn today?</h3>
-                <p className="text-sm text-muted-foreground mb-6">Try one of these or ask anything.</p>
+                <p className="text-sm text-muted-foreground mb-6">Try one of these or ask for a quiz!</p>
                 <div className="grid sm:grid-cols-2 gap-2 max-w-2xl mx-auto">
                   {SUGGESTIONS.map((s) => (
                     <button
@@ -185,7 +211,7 @@ function ChatPage() {
           ) : (
             <div className="space-y-4 py-4">
               {messages.map((m, i) => (
-                <Bubble key={i} role={m.role} content={m.content} />
+                <Bubble key={i} role={m.role} content={m.content} quiz={m.quiz} />
               ))}
               {send.isPending && (
                 <Bubble role="assistant" content="" loading />
@@ -208,7 +234,7 @@ function ChatPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); }
                 }}
-                placeholder={isListening ? "Listening..." : "Ask your AI tutor anything…"}
+                placeholder={isListening ? "Listening..." : "Ask your AI tutor anything or 'Quiz me on React'…"}
                 rows={1}
                 maxLength={4000}
                 className="resize-none min-h-[48px] max-h-40 pr-12"
@@ -236,14 +262,14 @@ function ChatPage() {
   );
 }
 
-function Bubble({ role, content, loading }: { role: "user" | "assistant"; content: string; loading?: boolean }) {
+function Bubble({ role, content, loading, quiz }: { role: "user" | "assistant"; content: string; loading?: boolean; quiz?: QuizData }) {
   const isUser = role === "user";
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
       <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isUser ? "bg-primary text-primary-foreground" : "bg-gradient-primary text-primary-foreground"}`}>
         {isUser ? <UserIcon className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
-      <div className={`max-w-[78%] rounded-2xl px-4 py-3 ${isUser ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-card border rounded-tl-sm"}`}>
+      <div className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3 ${isUser ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-card border rounded-tl-sm"}`}>
         {loading ? (
           <div className="flex gap-1.5 py-1">
             <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -251,9 +277,123 @@ function Bubble({ role, content, loading }: { role: "user" | "assistant"; conten
             <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: "300ms" }} />
           </div>
         ) : (
-          <div className="text-sm whitespace-pre-wrap leading-relaxed">{content}</div>
+          <div className="space-y-4">
+            <div className="text-sm whitespace-pre-wrap leading-relaxed">{content}</div>
+            {quiz && <ChatQuiz quiz={quiz} />}
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+function ChatQuiz({ quiz }: { quiz: QuizData }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const score = quiz.questions.reduce((acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0), 0);
+  const allAnswered = Object.keys(answers).length === quiz.questions.length;
+  const pct = Math.round((score / quiz.questions.length) * 100);
+
+  const handleSubmit = async () => {
+    setSubmitted(true);
+    if (user && quiz.id) {
+      setIsSaving(true);
+      try {
+        await supabase.from("quiz_attempts").insert({
+          quiz_id: quiz.id,
+          user_id: user.id,
+          score,
+          total: quiz.questions.length,
+          answers: answers as any,
+        });
+        qc.invalidateQueries({ queryKey: ["quiz-history"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      } catch (e) {
+        console.error("Failed to save quiz attempt", e);
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  return (
+    <Card className="mt-4 p-4 border-primary/20 bg-primary-soft/10">
+      <div className="flex items-center gap-2 mb-4">
+        <Brain className="h-5 w-5 text-primary" />
+        <span className="font-bold text-sm">Quiz: {quiz.topic}</span>
+      </div>
+
+      <div className="space-y-6">
+        {quiz.questions.map((q, qi) => (
+          <div key={qi} className="space-y-2">
+            <div className="text-sm font-medium leading-tight">Q{qi+1}: {q.question}</div>
+            <div className="grid gap-2">
+              {q.options.map((opt, oi) => {
+                const selected = answers[qi] === oi;
+                const correct = oi === q.correct_index;
+                const showResult = submitted;
+                return (
+                  <button
+                    key={oi}
+                    disabled={submitted}
+                    onClick={() => setAnswers({ ...answers, [qi]: oi })}
+                    className={cn(
+                      "text-left p-2.5 rounded-lg border text-xs transition-all flex items-center gap-2",
+                      !showResult && selected && "border-primary bg-primary/10",
+                      !showResult && !selected && "border-border hover:border-primary/20",
+                      showResult && correct && "border-success bg-success/10",
+                      showResult && selected && !correct && "border-destructive bg-destructive/10",
+                      showResult && !selected && !correct && "border-border opacity-60",
+                    )}
+                  >
+                    <span className={cn("h-5 w-5 rounded-full border flex items-center justify-center shrink-0",
+                      !showResult && selected && "border-primary bg-primary text-primary-foreground",
+                      showResult && correct && "border-success bg-success text-success-foreground",
+                      showResult && selected && !correct && "border-destructive bg-destructive text-destructive-foreground",
+                    )}>
+                      {showResult && correct ? <CheckCircle2 className="h-3 w-3" /> : showResult && selected ? <XCircle className="h-3 w-3" /> : String.fromCharCode(65 + oi)}
+                    </span>
+                    <span>{opt}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {submitted && (
+              <div className="text-[11px] text-muted-foreground bg-muted/50 p-2 rounded italic">
+                {q.explanation}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!submitted ? (
+        <Button 
+          className="w-full mt-6 h-10 shadow-glow" 
+          disabled={!allAnswered} 
+          onClick={handleSubmit}
+        >
+          Submit Quiz
+        </Button>
+      ) : (
+        <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center font-bold text-lg", 
+              pct >= 70 ? "bg-success/20 text-success" : "bg-warning/20 text-warning")}>
+              {pct}%
+            </div>
+            <div>
+              <div className="text-xs font-bold">{score}/{quiz.questions.length} correct</div>
+              <div className="text-[10px] text-muted-foreground">{isSaving ? "Saving..." : "Attempt saved!"}</div>
+            </div>
+          </div>
+          <Trophy className={cn("h-6 w-6", pct >= 70 ? "text-warning" : "text-muted opacity-30")} />
+        </div>
+      )}
+    </Card>
   );
 }
