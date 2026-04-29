@@ -13,6 +13,7 @@ const nav = [
   { to: "/quizzes", label: "Quizzes", icon: Brain },
   { to: "/interview", label: "Interview", icon: Mic },
   { to: "/resume", label: "Resume", icon: FileText },
+  { to: "/profile", label: "Profile", icon: UserCircle2 },
 ] as const;
 
 function isGuestMode() {
@@ -100,10 +101,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}>
               {avatar}
             </div>
-            <div className="flex-1 min-w-0">
+            <Link to="/profile" className="flex-1 min-w-0 cursor-pointer hover:opacity-80">
               <p className="text-sm font-medium truncate">{guest ? "Guest User" : displayName}</p>
               <p className="text-xs text-muted-foreground">{guest ? "No account" : "Student"}</p>
-            </div>
+            </Link>
             <Button
               variant="ghost"
               size="icon"
