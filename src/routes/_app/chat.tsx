@@ -108,9 +108,8 @@ function ChatPage() {
       const responseText = r.content || "...";
       const quiz = r.quiz as QuizData | undefined;
       
-      // If a quiz was generated, save it to the DB so attempts can be recorded
       let savedQuizId = undefined;
-      if (quiz && user) {
+      if (quiz && user && cid !== "guest") {
         const { data, error } = await supabase.from("quizzes").insert({
           user_id: user.id,
           topic: quiz.topic,
@@ -127,7 +126,7 @@ function ChatPage() {
       };
 
       setMessages((prev) => [...prev, newMsg]);
-      await persistMessage(cid, "assistant", responseText);
+      if (cid !== "guest") await persistMessage(cid, "assistant", responseText);
       if (voiceMode) speak(responseText);
     },
     onError: (e: Error) => {
@@ -147,6 +146,12 @@ function ChatPage() {
     const next = [...messages, { role: "user" as const, content: t }];
     setMessages(next);
     setInput("");
+
+    if (!user) {
+      // Guest mode: Chat works in-session but is NOT saved to Supabase
+      send.mutate({ history: next, cid: "guest" });
+      return;
+    }
 
     const cid = await ensureConversation(t);
     if (!cid) {
