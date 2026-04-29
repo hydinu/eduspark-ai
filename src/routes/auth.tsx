@@ -30,6 +30,8 @@ function AuthPage() {
   const [displayName, setDisplayName] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
+  const [otp, setOtp] = useState("");
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -55,17 +57,44 @@ function AuthPage() {
     if (!email || !password || !displayName) { toast.error("Please fill in all fields."); return; }
     if (password.length < 6) { toast.error("Password must be at least 6 characters."); return; }
     setLoading(true);
+    
+    // In Supabase, if OTP is enabled, we still call signUp.
+    // It will send an OTP if configured in the dashboard.
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: { 
+        data: { display_name: displayName },
+        emailRedirectTo: window.location.origin,
+      },
     });
+    
     setLoading(false);
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Account created! Check your email to confirm (or log in if email confirm is off).");
-      setTab("login");
+      toast.success("Verification code sent to your email! ✉️");
+      setShowOtp(true);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) { toast.error("Please enter the OTP."); return; }
+    setLoading(true);
+    
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: 'signup'
+    });
+    
+    setLoading(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Email verified! Welcome to EduSpark. 🎉");
+      navigate({ to: "/dashboard" });
     }
   };
 
@@ -194,86 +223,123 @@ function AuthPage() {
           </div>
 
           {/* Form */}
-          <form onSubmit={tab === "login" ? handleLogin : handleSignup} className="space-y-4">
-            {tab === "signup" && (
+          {!showOtp ? (
+            <form onSubmit={tab === "login" ? handleLogin : handleSignup} className="space-y-4">
+              {tab === "signup" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-display-name" className="text-sm font-medium">Full Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="auth-display-name"
+                      placeholder="Your name"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className="pl-10 h-11"
+                      autoComplete="name"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5">
-                <Label htmlFor="auth-display-name" className="text-sm font-medium">Full Name</Label>
+                <Label htmlFor="auth-email" className="text-sm font-medium">Email</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="auth-display-name"
-                    placeholder="Your name"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    id="auth-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-11"
-                    autoComplete="name"
+                    autoComplete="email"
                   />
                 </div>
               </div>
-            )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="auth-email" className="text-sm font-medium">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="auth-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-11"
-                  autoComplete="email"
-                />
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-password" className="text-sm font-medium">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="auth-password"
+                    type={showPass ? "text" : "password"}
+                    placeholder={tab === "signup" ? "Min 6 characters" : "Your password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 pr-10 h-11"
+                    autoComplete={tab === "login" ? "current-password" : "new-password"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(!showPass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="auth-password" className="text-sm font-medium">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="auth-password"
-                  type={showPass ? "text" : "password"}
-                  placeholder={tab === "signup" ? "Min 6 characters" : "Your password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-11"
-                  autoComplete={tab === "login" ? "current-password" : "new-password"}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+              <Button
+                id="auth-submit-btn"
+                type="submit"
+                className="w-full h-11 text-sm font-semibold shadow-glow mt-2"
+                disabled={loading}
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    {tab === "login" ? "Signing in…" : "Sending code…"}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {tab === "login" ? "Sign In" : "Get OTP Code"}
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                )}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auth-otp" className="text-sm font-medium">Enter 6-digit Code</Label>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowOtp(false)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Edit Email
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="auth-otp"
+                    placeholder="123456"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    className="h-12 text-center text-2xl tracking-[0.5em] font-bold"
+                    maxLength={6}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground text-center">We've sent a code to {email}</p>
               </div>
-            </div>
 
-            <Button
-              id="auth-submit-btn"
-              type="submit"
-              className="w-full h-11 text-sm font-semibold shadow-glow mt-2"
-              disabled={loading}
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                  {tab === "login" ? "Signing in…" : "Creating account…"}
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  {tab === "login" ? "Sign In" : "Create Account"}
-                  <ArrowRight className="h-4 w-4" />
-                </span>
-              )}
-            </Button>
-          </form>
+              <Button
+                id="auth-verify-btn"
+                type="submit"
+                className="w-full h-11 text-sm font-semibold shadow-glow"
+                disabled={loading || otp.length < 6}
+              >
+                {loading ? "Verifying..." : "Verify & Complete Signup"}
+              </Button>
+            </form>
+          )}
 
           {/* Divider */}
           <div className="flex items-center gap-4 my-5">
