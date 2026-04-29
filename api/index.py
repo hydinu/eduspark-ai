@@ -8,13 +8,8 @@ EduSpark AI — Python Backend v3
 
 import os
 import re
-import json
-import socket
-import signal
-import subprocess
-import sys
 import requests
-from dotenv import load_dotenv
+import json
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -652,31 +647,7 @@ def web_page_notes(body: WebNotesRequest):
     return generate_web_notes(content, title, body.url, call_groq)
 
 
-# ── Port management & startup ─────────────────────────────────────────────────
-
-def kill_port(port: int):
-    """Kill any process using the given port (Windows)."""
-    try:
-        result = subprocess.run(
-            ["netstat", "-ano"],
-            capture_output=True, text=True
-        )
-        for line in result.stdout.splitlines():
-            if f":{port}" in line and "LISTENING" in line:
-                parts = line.strip().split()
-                pid = int(parts[-1])
-                if pid != os.getpid():
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                                   capture_output=True)
-                    print(f"Killed old process PID {pid} on port {port}")
-    except Exception as e:
-        print(f"Could not auto-kill port {port}: {e}")
-
-
 if __name__ == "__main__":
     import uvicorn
-    kill_port(PORT)  # auto-kill any old process on this port
-    ai_mode = "Groq Llama 3 (open-source)" if GROQ_API_KEY else "Direct transcript parsing (no API key needed)"
-    print(f"EduSpark AI Backend v3 starting on http://localhost:{PORT}")
-    print(f"AI mode: {ai_mode}")
+    PORT = int(os.getenv("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=PORT)
