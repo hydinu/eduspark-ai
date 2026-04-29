@@ -138,11 +138,10 @@ async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult
 
   const searchParams = new URLSearchParams({
     part: 'snippet',
-    q: topic + ' tutorial explanation educational',
+    q: topic + ' tutorial course',
     type: 'video',
     maxResults: MAX_RESULTS.toString(),
     order: 'relevance',
-    videoCategoryId: '27',
     safeSearch: 'strict',
     key: YOUTUBE_API_KEY,
   });

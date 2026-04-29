@@ -99,8 +99,8 @@ function InterviewPage() {
 
   // --- Interrupt: if user starts talking while AI is speaking, stop AI ---
   useEffect(() => {
-    if (phase === "speaking" && speechTranscript && speechTranscript.trim().length > 3) {
-      // User interrupted! Stop AI and switch to listening
+    if (phase === "speaking" && speechTranscript && speechTranscript.trim().length > 0) {
+      // User interrupted! Stop AI immediately and switch to listening
       stopSpeaking();
       setPhase("listening");
     }
