@@ -4,13 +4,13 @@ import { z } from "zod";
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const KG_BASE_URL = "https://outstandingom-knowledge-graph-env.hf.space";
 
 async function callAI(body: Record<string, unknown>) {
   const lovableKey = process.env.LOVABLE_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
 
-  // 1. Try Groq first (Fastest & high limits)
   if (groqKey) {
     try {
       const groqBody = { 
@@ -23,13 +23,11 @@ async function callAI(body: Record<string, unknown>) {
         body: JSON.stringify(groqBody),
       });
       if (res.ok) return res.json();
-      console.warn("Groq failed, trying fallback...", res.status);
     } catch (e) {
-      console.warn("Groq fetch error:", e);
+      console.warn("Groq failed:", e);
     }
   }
 
-  // 2. Try Lovable Gateway
   if (lovableKey) {
     const res = await fetch(GATEWAY_URL, {
       method: "POST",
@@ -37,13 +35,8 @@ async function callAI(body: Record<string, unknown>) {
       body: JSON.stringify(body),
     });
     if (res.ok) return res.json();
-    if (res.status === 429) {
-       // If gateway is rate limited, we continue to direct Gemini
-       console.warn("Gateway rate limited, trying direct Gemini...");
-    }
   }
 
-  // 3. Try Direct Gemini
   if (geminiKey) {
     const geminiBody = { ...body, model: "gemini-1.5-flash" };
     const res = await fetch(GEMINI_URL, {
@@ -52,12 +45,28 @@ async function callAI(body: Record<string, unknown>) {
       body: JSON.stringify(geminiBody),
     });
     if (res.ok) return res.json();
-    if (res.status === 429) throw new Error("All AI providers are currently rate limited. Please try again in 60 seconds.");
-    const t = await res.text();
-    throw new Error(`AI Provider Error: ${t.slice(0, 200)}`);
   }
 
-  throw new Error("AI not configured. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.");
+  throw new Error("AI provider failed or not configured.");
+}
+
+/* ------- Knowledge Graph RAG Helper ------- */
+async function queryKnowledgeGraph(query: string) {
+  try {
+    // Attempt to get a description from the KG
+    const res = await fetch(`${KG_BASE_URL}/sentence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ concept: query.slice(0, 50) }),
+      timeout: 5000,
+    } as any);
+    if (res.ok) {
+      const data = await res.json();
+      return data.sentence || null;
+    }
+  } catch (e) {
+    return null;
+  }
 }
 
 /* ------- Chat tutor ------- */
@@ -71,50 +80,93 @@ const chatSchema = z.object({
 export const aiChat = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => chatSchema.parse(d))
   .handler(async ({ data }) => {
+    const lastMsg = data.messages[data.messages.length - 1].content;
+    
+    // 1. RAG Step: Query Knowledge Graph for the last message
+    const kgContext = await queryKnowledgeGraph(lastMsg);
+
     const sys = {
       role: "system" as const,
-      content: `You are EduMate, a friendly, encouraging AI tutor for students. 
-      You can explain concepts, suggest learning paths, and recommend resources.
-      IMPORTANT: You have a tool to GENERATE REAL QUIZZES. If the user asks to be quizzed, tested, or wants to practice a topic, use the 'generate_quiz' tool. 
-      After the tool returns the quiz data, confirm to the user that you've prepared the quiz for them.
-      Use markdown formatting with headings, lists and code blocks where useful.`,
+      content: `You are EduMate, an AI tutor.
+      ${kgContext ? `\nCONTEXT FROM KNOWLEDGE GRAPH: ${kgContext}\nUse this context if relevant to provide more accurate answers.` : ""}
+      
+      You have tools to:
+      1. 'generate_quiz': Use this if the user wants to practice or be tested.
+      2. 'kg_calculate': Use this for ANY mathematical expression (e.g. "5+2"). It uses the Knowledge Graph reasoning engine.
+      
+      Always provide clear, encouraging explanations.`,
     };
+
     const result = await callAI({
       model: "google/gemini-1.5-flash",
       messages: [sys, ...data.messages],
-      tools: [{
-        type: "function",
-        function: {
-          name: "generate_quiz",
-          description: "Generates a structured multiple-choice quiz on a specific topic.",
-          parameters: {
-            type: "object",
-            properties: {
-              topic: { type: "string", description: "The subject of the quiz" },
-              difficulty: { type: "string", enum: ["beginner", "intermediate", "advanced", "expert", "elite"], default: "intermediate" },
-              count: { type: "integer", minimum: 3, maximum: 10, default: 5 }
-            },
-            required: ["topic"]
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "generate_quiz",
+            description: "Generates a multiple-choice quiz.",
+            parameters: {
+              type: "object",
+              properties: {
+                topic: { type: "string" },
+                difficulty: { type: "string", enum: ["beginner", "intermediate", "advanced", "expert", "elite"], default: "intermediate" },
+                count: { type: "integer", default: 5 }
+              },
+              required: ["topic"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "kg_calculate",
+            description: "Evaluates a mathematical expression using the Knowledge Graph engine.",
+            parameters: {
+              type: "object",
+              properties: {
+                expression: { type: "string", description: "e.g. '5 + 2 * 10'" }
+              },
+              required: ["expression"]
+            }
           }
         }
-      }]
+      ]
     });
 
     const msg = result?.choices?.[0]?.message;
     if (msg?.tool_calls?.[0]) {
       const toolCall = msg.tool_calls[0];
+      
+      // Handle Quiz Tool
       if (toolCall.function.name === "generate_quiz") {
         const args = JSON.parse(toolCall.function.arguments);
         const quizResult = await aiGenerateQuiz({ data: args });
         return { 
-          content: msg.content || "I've prepared a quiz for you! Check it out below.",
-          quiz: { ...quizResult, topic: args.topic, difficulty: args.difficulty || "medium" } 
+          content: msg.content || "I've prepared a quiz for you!",
+          quiz: { ...quizResult, topic: args.topic, difficulty: args.difficulty || "intermediate" } 
         };
+      }
+
+      // Handle KG Calculate Tool
+      if (toolCall.function.name === "kg_calculate") {
+        const args = JSON.parse(toolCall.function.arguments);
+        try {
+          const calcRes = await fetch(`${KG_BASE_URL}/calculate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expression: args.expression })
+          });
+          const calcData = await calcRes.json();
+          const reply = `According to the Knowledge Graph engine, ${args.expression} = ${calcData.result}`;
+          return { content: reply };
+        } catch (e) {
+          return { content: "I tried to calculate that using the Knowledge Graph, but encountered an error. Let me try myself..." };
+        }
       }
     }
 
-    const content = msg?.content ?? "";
-    return { content };
+    return { content: msg?.content ?? "" };
   });
 
 /* ------- Course suggestions ------- */
@@ -180,19 +232,20 @@ const quizSchema = z.object({
 export const aiGenerateQuiz = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => quizSchema.parse(d))
   .handler(async ({ data }) => {
+    // RAG for Quiz: Get context to make better questions
+    const kgContext = await queryKnowledgeGraph(data.topic);
+
     const result = await callAI({
       model: "google/gemini-1.5-flash",
       messages: [
         { 
           role: "system", 
-          content: `You are a universal expert quiz generator capable of creating high-quality assessments for ANY field:
-          - ACADEMIC: History, Science, Literature, Philosophy, etc.
-          - TECHNICAL: Coding, Engineering, Data Science, AI.
-          - PROFESSIONAL: Business, Marketing, Aptitude, Finance.
+          content: `You are a universal expert quiz generator.
+          ${kgContext ? `\nCONTEXT FROM KNOWLEDGE GRAPH: ${kgContext}\nUse this context to inform your questions.` : ""}
           - APTITUDE: For math/logic, provide step-by-step calculations in the explanation.
-          Always ensure 4 distinct options with one unambiguously correct answer and a high-quality educational explanation.`
+          Always ensure 4 distinct options with one unambiguously correct answer.`
         },
-        { role: "user", content: `Generate ${data.count} ${data.difficulty}-difficulty multiple-choice questions about "${data.topic}". Each must have 4 options with exactly one correct. Include a short explanation.` },
+        { role: "user", content: `Generate ${data.count} ${data.difficulty}-difficulty multiple-choice questions about "${data.topic}". Include a short explanation.` },
       ],
       tools: [{
         type: "function",
@@ -237,11 +290,12 @@ const interviewStartSchema = z.object({
 export const aiInterviewStart = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => interviewStartSchema.parse(d))
   .handler(async ({ data }) => {
+    const kgContext = await queryKnowledgeGraph(data.role_topic);
     const result = await callAI({
       model: "google/gemini-1.5-flash",
       messages: [
-        { role: "system", content: `You are a friendly mock interviewer for ${data.role_topic}. Ask one focused question at a time. Be encouraging.` },
-        { role: "user", content: "Start the interview with a brief greeting and your first question." },
+        { role: "system", content: `You are a mock interviewer for ${data.role_topic}. ${kgContext ? `Context: ${kgContext}` : ""} Ask one focused question.` },
+        { role: "user", content: "Start the interview." },
       ],
     });
     return { content: result?.choices?.[0]?.message?.content ?? "" };
@@ -259,7 +313,7 @@ export const aiInterviewTurn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => interviewTurnSchema.parse(d))
   .handler(async ({ data }) => {
     const messages = [
-      { role: "system" as const, content: `You are a friendly mock interviewer for ${data.role_topic}. Give brief, encouraging feedback on the candidate's last answer (1-2 sentences) then ask the next question. Keep it conversational.` },
+      { role: "system" as const, content: `You are a friendly mock interviewer for ${data.role_topic}.` },
       ...data.transcript.map((t) => ({
         role: (t.role === "interviewer" ? "assistant" : "user") as "assistant" | "user",
         content: t.content,
@@ -286,28 +340,12 @@ const notesSchema = z.object({
 export const aiGenerateVideoNotes = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => notesSchema.parse(d))
   .handler(async ({ data }) => {
-    const prompt = `You are an expert study notes generator. Based on the YouTube video titled "${data.video_title}" (${data.video_url}), create comprehensive timestamped study notes.
-Generate realistic, educational timestamped study notes as if you had watched this video. Create 5-7 sections with meaningful timestamps.
-
-Return ONLY valid JSON in this exact format:
-{
-  "video_title": "${data.video_title.replace(/"/g, '\\"')}",
-  "notes": [
-    {
-      "timestamp": "0:00",
-      "section_title": "Introduction",
-      "content": "• Key point 1\\n• Key point 2"
-    }
-  ]
-}`;
-
     const result = await callAI({
       model: "google/gemini-1.5-flash",
       messages: [
-        { role: "system", content: "You are a study notes generator. Always respond with valid JSON only." },
-        { role: "user", content: prompt },
+        { role: "system", content: "You are a study notes generator." },
+        { role: "user", content: `Generate comprehensive timestamped study notes for: ${data.video_title}. Return JSON.` },
       ],
-      temperature: 0.7,
     });
 
     const raw = result?.choices?.[0]?.message?.content ?? "";
@@ -331,7 +369,7 @@ export const aiInterviewFinish = createServerFn({ method: "POST" })
       model: "google/gemini-1.5-flash",
       messages: [
         { role: "system", content: "You are a senior interviewer giving structured feedback." },
-        { role: "user", content: `Evaluate this mock ${data.role_topic} interview. Give: (1) overall score 0-100, (2) 2-3 strengths, (3) 2-3 areas to improve, (4) one piece of actionable advice. Format with markdown.\n\n${transcriptText}` },
+        { role: "user", content: `Evaluate this interview: \n\n${transcriptText}` },
       ],
       tools: [{
         type: "function",

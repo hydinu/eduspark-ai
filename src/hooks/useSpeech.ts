@@ -81,6 +81,7 @@ export function useSpeech(): UseSpeechReturn {
       setInterimTranscript("");
       recognitionRef.current.start();
       setIsListening(true);
+      console.log("Speech recognition started");
     } catch (err) {
       console.error(err);
       toast.error("Could not start microphone. Check permissions.");
@@ -122,13 +123,19 @@ export function useSpeech(): UseSpeechReturn {
     utterance.pitch = 1.0;
 
     // Try to find a good English voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => v.lang.startsWith("en-") && (v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Zira")));
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    let voices = window.speechSynthesis.getVoices();
+    const findVoice = (vList: SpeechSynthesisVoice[]) => 
+      vList.find(v => v.lang.startsWith("en-") && (v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Natural")));
+    
+    let voice = findVoice(voices);
+    if (voice) {
+      utterance.voice = voice;
     }
 
-    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      console.log("Speaking started:", cleanText.slice(0, 30) + "...");
+    };
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = (e) => {
       console.error("TTS Error:", e);
