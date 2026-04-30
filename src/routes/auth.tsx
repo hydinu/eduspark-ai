@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GraduationCap, Mail, Lock, User, Eye, EyeOff, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
+import { GraduationCap, Mail, Lock, User, Eye, EyeOff, Sparkles, ArrowRight, CheckCircle2, Linkedin } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -154,6 +154,18 @@ function AuthPage() {
       toast.success("Logged in as Demo User! ");
       navigate({ to: "/dashboard" });
     }
+    setLoading(false);
+  };
+
+  const handleLinkedInLogin = async () => {
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "linkedin_oidc",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`
+      }
+    });
+    if (error) toast.error(error.message);
     setLoading(false);
   };
 
@@ -388,17 +400,30 @@ function AuthPage() {
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          <Button
-            id="auth-guest-btn"
-            variant="outline"
-            className="w-full h-11 text-sm font-medium border-primary/20 hover:bg-primary-soft/30 transition-all duration-300 group"
-            onClick={handleGuest}
-            disabled={loading}
-          >
-            <Sparkles className="h-4 w-4 mr-2 text-primary group-hover:animate-pulse" />
-            Explore as Guest
-            <span className="ml-auto text-[10px] text-muted-foreground font-normal">No account needed</span>
-          </Button>
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full h-11 text-sm font-medium border-[#0a66c2]/20 hover:bg-[#0a66c2]/10 transition-all duration-300 text-[#0a66c2]"
+              onClick={handleLinkedInLogin}
+              disabled={loading}
+              type="button"
+            >
+              <Linkedin className="h-4 w-4 mr-2" />
+              Sign in with LinkedIn
+            </Button>
+
+            <Button
+              id="auth-guest-btn"
+              variant="outline"
+              className="w-full h-11 text-sm font-medium border-primary/20 hover:bg-primary-soft/30 transition-all duration-300 group"
+              onClick={handleGuest}
+              disabled={loading}
+            >
+              <Sparkles className="h-4 w-4 mr-2 text-primary group-hover:animate-pulse" />
+              Explore as Guest
+              <span className="ml-auto text-[10px] text-muted-foreground font-normal">No account needed</span>
+            </Button>
+          </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             {tab === "login" ? (

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { aiGenerateQuiz } from "@/server/ai.functions";
@@ -27,6 +27,8 @@ import {
   Trophy,
   Network,
   Send,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -61,6 +63,77 @@ function QuizPage() {
   const [textAnswer, setTextAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+
+  // Timer state
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [timerExpired, setTimerExpired] = useState<Record<number, boolean>>({});
+
+  // Timer settings based on difficulty
+  const getTimePerQuestion = (difficulty: Difficulty): number => {
+    const timeMap = {
+      beginner: 60,      // 1 minute
+      intermediate: 45,  // 45 seconds
+      advanced: 30,      // 30 seconds
+      expert: 20,        // 20 seconds
+      elite: 15          // 15 seconds
+    };
+    return timeMap[difficulty] || 45;
+  };
+
+  // Timer effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isTimerActive && timeLeft > 0 && quiz?.questions && !submitted) {
+      interval = setInterval(() => {
+        setTimeLeft((time) => {
+          if (time <= 1) {
+            // Time expired for current question
+            setTimerExpired(prev => ({ ...prev, [currentQuestionIndex]: true }));
+            setIsTimerActive(false);
+            // Auto-advance to next question or submit if last question
+            if (currentQuestionIndex < quiz.questions!.length - 1) {
+              setTimeout(() => nextQuestion(), 1000); // Brief pause to show expired state
+            } else {
+              setTimeout(() => submitStandard(), 1000);
+            }
+            return 0;
+          }
+          return time - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerActive, timeLeft, currentQuestionIndex, quiz, submitted]);
+
+  // Start timer for a question
+  const startTimer = useCallback((questionIndex: number) => {
+    if (quiz?.questions && !timerExpired[questionIndex]) {
+      setCurrentQuestionIndex(questionIndex);
+      setTimeLeft(getTimePerQuestion(difficulty));
+      setIsTimerActive(true);
+    }
+  }, [quiz, difficulty, timerExpired]);
+
+  // Move to next question
+  const nextQuestion = useCallback(() => {
+    if (quiz?.questions && currentQuestionIndex < quiz.questions.length - 1) {
+      const nextIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+      startTimer(nextIndex);
+    }
+  }, [quiz, currentQuestionIndex, startTimer]);
+
+  // Move to previous question
+  const prevQuestion = useCallback(() => {
+    if (currentQuestionIndex > 0) {
+      const prevIndex = currentQuestionIndex - 1;
+      setCurrentQuestionIndex(prevIndex);
+      setTimeLeft(getTimePerQuestion(difficulty));
+      setIsTimerActive(true);
+    }
+  }, [currentQuestionIndex, difficulty]);
 
   const { data: history } = useQuery({
     queryKey: ["quiz-history", user?.id],
@@ -160,7 +233,10 @@ function QuizPage() {
       setTextAnswer("");
       setSubmitted(false);
       setScore(null);
-    },
+      setCurrentQuestionIndex(0);
+      setTimerExpired({});
+      // Start timer for first question
+      setTimeout(() => startTimer(0), 100);    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -174,6 +250,7 @@ function QuizPage() {
     const pct = Math.round((s / total) * 100);
     setScore(pct);
     setSubmitted(true);
+    setIsTimerActive(false); // Stop the timer
 
     if (user && quiz.id) {
       const { error } = await supabase.from("quiz_attempts").insert({
@@ -237,6 +314,10 @@ function QuizPage() {
     setSubmitted(false);
     setScore(null);
     setTopic("");
+    setCurrentQuestionIndex(0);
+    setTimeLeft(0);
+    setIsTimerActive(false);
+    setTimerExpired({});
   }
 
   if (quiz) {
@@ -246,21 +327,49 @@ function QuizPage() {
         0,
       );
       const allAnswered = Object.keys(answers).length === quiz.questions!.length;
-      const pct =
-        score !== null ? score : Math.round((currentScore / quiz.questions!.length) * 100);
+      const pct = score !== null ? score : Math.round((currentScore / quiz.questions!.length) * 100);
+      const currentQ = quiz.questions![currentQuestionIndex];
+      const isExpired = timerExpired[currentQuestionIndex];
 
       return (
         <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto">
           <PageHeader
             icon={Brain}
             title={quiz.topic}
-            description={`${quiz.questions!.length} questions • ${difficulty}`}
+            description={`${quiz.questions!.length} questions • ${difficulty} • Question ${currentQuestionIndex + 1}/${quiz.questions!.length}`}
             action={
               <Button variant="outline" onClick={reset}>
                 <RotateCcw className="h-4 w-4 mr-2" /> New quiz
               </Button>
             }
           />
+
+          {/* Timer Display */}
+          <Card className={cn("p-4 mb-6 border-2",
+            timeLeft <= 10 && timeLeft > 0 ? "border-warning bg-warning/5" :
+            timeLeft === 0 || isExpired ? "border-destructive bg-destructive/5" : "border-primary/20 bg-primary/5")}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className={cn("h-5 w-5",
+                  timeLeft <= 10 && timeLeft > 0 ? "text-warning" :
+                  timeLeft === 0 || isExpired ? "text-destructive" : "text-primary")} />
+                <div>
+                  <div className="text-sm font-medium">Time Remaining</div>
+                  <div className={cn("text-2xl font-bold",
+                    timeLeft <= 10 && timeLeft > 0 ? "text-warning" :
+                    timeLeft === 0 || isExpired ? "text-destructive" : "text-primary")}>
+                    {isExpired ? "00:00" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`}
+                  </div>
+                </div>
+              </div>
+              {isExpired && (
+                <div className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="text-sm font-medium">Time Expired</span>
+                </div>
+              )}
+            </div>
+          </Card>
 
           {submitted && (
             <Card className="p-6 mb-6 bg-gradient-card border-primary/20">
@@ -294,85 +403,100 @@ function QuizPage() {
             </Card>
           )}
 
-          <div className="space-y-4">
-            {quiz.questions!.map((q, qi) => (
-              <Card key={qi} className="p-5">
-                <div className="flex items-start gap-2 mb-4">
-                  <span className="text-xs font-bold text-muted-foreground mt-0.5">Q{qi + 1}</span>
-                  <h3 className="font-medium flex-1">{q.question}</h3>
+          {!submitted && currentQ && (
+            <Card className="p-5">
+              <div className="flex items-start gap-2 mb-4">
+                <span className="text-xs font-bold text-muted-foreground mt-0.5">Q{currentQuestionIndex + 1}</span>
+                <h3 className="font-medium flex-1">{currentQ.question}</h3>
+              </div>
+              <div className="space-y-2">
+                {currentQ.options.map((opt, oi) => {
+                  const selected = answers[currentQuestionIndex] === oi;
+                  const correct = oi === currentQ.correct_index;
+                  const showResult = submitted || isExpired;
+                  return (
+                    <button
+                      key={oi}
+                      disabled={submitted || isExpired}
+                      onClick={() => {
+                        setAnswers({ ...answers, [currentQuestionIndex]: oi });
+                        // Auto-advance after selection if not last question
+                        if (currentQuestionIndex < quiz.questions!.length - 1) {
+                          setTimeout(() => nextQuestion(), 500);
+                        }
+                      }}
+                      className={cn(
+                        "w-full text-left p-3 rounded-lg border-2 text-sm transition-all flex items-center gap-3",
+                        !showResult && selected && "border-primary bg-primary-soft",
+                        !showResult && !selected && "border-border hover:border-primary/40",
+                        showResult && correct && "border-success bg-success/10",
+                        showResult && selected && !correct && "border-destructive bg-destructive/10",
+                        showResult && !selected && !correct && "border-border opacity-60",
+                        (submitted || isExpired) && "cursor-not-allowed"
+                      )}
+                    >
+                      <span className={cn("h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs shrink-0",
+                        !showResult && selected && "border-primary bg-primary text-primary-foreground",
+                        !showResult && !selected && "border-muted-foreground/30",
+                        showResult && correct && "border-success bg-success text-success-foreground",
+                        showResult && selected && !correct && "border-destructive bg-destructive text-destructive-foreground",
+                      )}>
+                        {showResult && correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : showResult && selected ? <XCircle className="h-3.5 w-3.5" /> : String.fromCharCode(65 + oi)}
+                      </span>
+                      <span className="flex-1">{opt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {(submitted || isExpired) && (
+                <div className="mt-3 p-3 rounded-lg bg-secondary/50 text-sm">
+                  <span className="font-semibold">Explanation: </span>{currentQ.explanation}
                 </div>
-                <div className="space-y-2">
-                  {q.options.map((opt, oi) => {
-                    const selected = answers[qi] === oi;
-                    const correct = oi === q.correct_index;
-                    const showResult = submitted;
-                    return (
-                      <button
-                        key={oi}
-                        disabled={submitted}
-                        onClick={() => setAnswers({ ...answers, [qi]: oi })}
-                        className={cn(
-                          "w-full text-left p-3 rounded-lg border-2 text-sm transition-all flex items-center gap-3",
-                          !showResult && selected && "border-primary bg-primary-soft",
-                          !showResult && !selected && "border-border hover:border-primary/40",
-                          showResult && correct && "border-success bg-success/10",
-                          showResult &&
-                            selected &&
-                            !correct &&
-                            "border-destructive bg-destructive/10",
-                          showResult && !selected && !correct && "border-border opacity-60",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs shrink-0",
-                            !showResult &&
-                              selected &&
-                              "border-primary bg-primary text-primary-foreground",
-                            !showResult && !selected && "border-muted-foreground/30",
-                            showResult &&
-                              correct &&
-                              "border-success bg-success text-success-foreground",
-                            showResult &&
-                              selected &&
-                              !correct &&
-                              "border-destructive bg-destructive text-destructive-foreground",
-                          )}
-                        >
-                          {showResult && correct ? (
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          ) : showResult && selected ? (
-                            <XCircle className="h-3.5 w-3.5" />
-                          ) : (
-                            String.fromCharCode(65 + oi)
-                          )}
-                        </span>
-                        <span className="flex-1">{opt}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {submitted && (
-                  <div className="mt-3 p-3 rounded-lg bg-secondary/50 text-sm">
-                    <span className="font-semibold">Explanation: </span>
-                    {q.explanation}
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
+              )}
+            </Card>
+          )}
 
           {!submitted && (
-            <div className="mt-6 sticky bottom-4">
+            <div className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={prevQuestion}
+                disabled={currentQuestionIndex === 0}
+                className="flex-1"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                onClick={nextQuestion}
+                disabled={currentQuestionIndex >= quiz.questions!.length - 1}
+                className="flex-1"
+              >
+                Next
+              </Button>
               <Button
                 onClick={submitStandard}
                 disabled={!allAnswered}
-                className="w-full h-12 shadow-glow"
+                className="flex-1 shadow-glow"
               >
-                Submit ({Object.keys(answers).length}/{quiz.questions!.length})
+                Submit Quiz
               </Button>
             </div>
           )}
+
+          {/* Progress indicator */}
+          <div className="mt-4 flex gap-1 justify-center">
+            {quiz.questions!.map((_, i) => (
+              <div
+                key={i}
+                className={cn("h-2 flex-1 rounded-full transition-all",
+                  i === currentQuestionIndex ? "bg-primary" :
+                  answers[i] !== undefined ? "bg-success" :
+                  timerExpired[i] ? "bg-destructive" : "bg-muted"
+                )}
+              />
+            ))}
+          </div>
         </div>
       );
     } else {

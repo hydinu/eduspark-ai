@@ -131,6 +131,48 @@ function ResumePage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const fetchGithub = useMutation({
+    mutationFn: async (username: string) => {
+      const res = await fetch(`https://api.github.com/users/${username}/repos?sort=pushed&per_page=10`);
+      if (!res.ok) throw new Error("Failed to fetch GitHub data. Check the username.");
+      return res.json();
+    },
+    onSuccess: (data: any[]) => {
+      if (!data.length) {
+        toast.info("No public repositories found.");
+        return;
+      }
+      // Filter out forks and pick top 4
+      const newProjects: ProjectEntry[] = data.filter((r) => !r.fork).slice(0, 4).map((repo) => ({
+        title: repo.name,
+        tech_stack: repo.language || "",
+        bullets: [repo.description || "Developed and maintained this repository."],
+        live_url: repo.homepage || repo.html_url,
+      }));
+      
+      setProjects((prev) => {
+        const filtered = prev.filter((p) => p.title.trim() !== "");
+        return [...filtered, ...newProjects].slice(0, 6);
+      });
+
+      const langs = Array.from(new Set(data.map((r) => r.language).filter(Boolean))) as string[];
+      if (langs.length > 0) {
+        setSkills((prev) => {
+          const newSkills = [...prev];
+          const langCatIndex = newSkills.findIndex((s) => s.category.toLowerCase() === "languages");
+          if (langCatIndex >= 0) {
+            newSkills[langCatIndex].items = Array.from(new Set([...newSkills[langCatIndex].items, ...langs]));
+          } else {
+            newSkills.unshift({ category: "Languages", items: langs });
+          }
+          return newSkills;
+        });
+      }
+      toast.success("GitHub projects and skills imported successfully!");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   async function downloadPDF() {
     if (!resumeRef.current) return;
     setTab("preview");
@@ -235,11 +277,29 @@ function ResumePage() {
                 value={linkedin}
                 onChange={(e) => setLinkedin(e.target.value)}
               />
-              <Input
-                placeholder="GitHub URL"
-                value={github}
-                onChange={(e) => setGithub(e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  placeholder="GitHub Username or URL"
+                  value={github}
+                  onChange={(e) => setGithub(e.target.value)}
+                  className="flex-1"
+                />
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    if (!github) return toast.error("Enter GitHub username or URL first");
+                    let username = github.trim();
+                    if (username.includes("github.com/")) {
+                      username = username.split("github.com/")[1].split("/")[0];
+                    }
+                    fetchGithub.mutate(username);
+                  }}
+                  disabled={fetchGithub.isPending}
+                  className="px-3 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20"
+                >
+                  {fetchGithub.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Import"}
+                </Button>
+              </div>
             </div>
           </Card>
 

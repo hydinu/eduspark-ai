@@ -10,7 +10,8 @@ import os
 import re
 import requests
 import json
-from fastapi import FastAPI, HTTPException, Query
+import PyPDF2
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
@@ -677,7 +678,6 @@ async def web_page_notes(body: WebNotesRequest):
 
     title = body.title or body.url
     return generate_web_notes(content, title, body.url, call_groq)
-
 
 if __name__ == "__main__":
     import uvicorn
