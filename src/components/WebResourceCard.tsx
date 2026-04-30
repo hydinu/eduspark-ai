@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, FileText, Loader2, CheckCircle } from "lucide-react";
+import { ExternalLink, FileText, Loader2, CheckCircle, Bookmark, BookmarkCheck } from "lucide-react";
 import { toast } from "sonner";
 import { downloadNotesAsPDF, NotesData } from "@/lib/pdf-generator";
 
@@ -20,6 +20,7 @@ export interface WebResource {
 interface WebResourceCardProps {
   resource: WebResource;
   index: number;
+  onSave?: (resource: WebResource) => Promise<void>;
 }
 
 async function fetchWebNotes(url: string, title: string): Promise<NotesData> {
@@ -35,8 +36,10 @@ async function fetchWebNotes(url: string, title: string): Promise<NotesData> {
   return res.json();
 }
 
-export function WebResourceCard({ resource, index }: WebResourceCardProps) {
+export function WebResourceCard({ resource, index, onSave }: WebResourceCardProps) {
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [done, setDone] = useState(false);
 
   async function handleGetNotes() {
@@ -61,6 +64,19 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!onSave || saved) return;
+    setSaving(true);
+    try {
+      await onSave(resource);
+      setSaved(true);
+    } catch (err: any) {
+      // error toast handled by parent
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -106,7 +122,7 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
         <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" asChild>
           <a href={resource.url} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="h-3 w-3 mr-1.5" />
-            Open Article
+            Open
           </a>
         </Button>
 
@@ -127,10 +143,31 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
             </>
           ) : (
             <>
-              <FileText className="h-3 w-3 mr-1.5" /> Quick Notes PDF
+              <FileText className="h-3 w-3 mr-1.5" /> Notes PDF
             </>
           )}
         </Button>
+
+        {onSave && (
+          <Button
+            size="sm"
+            variant={saved ? "secondary" : "outline"}
+            className={`h-8 px-2.5 text-xs shrink-0 ${
+              saved ? "text-primary" : ""
+            }`}
+            onClick={handleSave}
+            disabled={saving || saved}
+            title={saved ? "Saved to learning list" : "Save to learning list"}
+          >
+            {saving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : saved ? (
+              <BookmarkCheck className="h-3 w-3" />
+            ) : (
+              <Bookmark className="h-3 w-3" />
+            )}
+          </Button>
+        )}
       </div>
     </Card>
   );

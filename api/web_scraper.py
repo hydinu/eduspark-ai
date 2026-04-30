@@ -251,6 +251,119 @@ def search_courses(topic: str, num_results: int = 8) -> list[dict]:
     return results[:num_results]
 
 
+def search_youtube_videos(topic: str, num_results: int = 10) -> list[dict]:
+    """
+    Search DuckDuckGo HTML for YouTube videos about a topic — no API key needed.
+    Returns a list of video dicts compatible with the /api/search-videos response format.
+    """
+    query = f"{topic} tutorial site:youtube.com"
+    url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
+
+    results = []
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        blocks = (
+            soup.find_all("div", class_="result__body")
+            or soup.find_all("div", class_="results_links_deep")
+            or soup.find_all("div", attrs={"data-nir": True})
+            or soup.find_all("article")
+        )
+
+        for block in blocks[:num_results * 2]:
+            title_el = (
+                block.find("a", class_="result__a")
+                or block.find("a", class_="result__url")
+                or block.find("h2", class_="result__title")
+                or block.find("a")
+            )
+            snippet_el = (
+                block.find("a", class_="result__snippet")
+                or block.find("div", class_="result__snippet")
+                or block.find("span", class_="result__snippet")
+            )
+            if not title_el:
+                continue
+
+            href = title_el.get("href", "")
+            if "uddg=" in href:
+                try:
+                    real_url = unquote(href.split("uddg=")[1].split("&")[0])
+                except Exception:
+                    real_url = href
+            else:
+                real_url = href
+
+            if not real_url.startswith("http"):
+                continue
+
+            # Only keep YouTube video links
+            if "youtube.com/watch" not in real_url and "youtu.be/" not in real_url:
+                continue
+
+            # Extract video ID
+            video_id = None
+            if "youtube.com/watch?v=" in real_url:
+                video_id = real_url.split("v=")[1].split("&")[0][:11]
+            elif "youtu.be/" in real_url:
+                video_id = real_url.split("youtu.be/")[1].split("?")[0][:11]
+
+            if not video_id:
+                continue
+
+            title = title_el.get_text(strip=True)
+            snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+
+            # Remove " - YouTube" suffix common in DDG results
+            title = re.sub(r"\s*[-–]\s*YouTube\s*$", "", title, flags=re.IGNORECASE).strip()
+
+            # Try to extract channel from snippet (often "Channel Name · duration ago")
+            channel = ""
+            channel_match = re.match(r"^([^·•\-]+)[·•]", snippet)
+            if channel_match:
+                channel = channel_match.group(1).strip()
+
+            results.append({
+                "title": title,
+                "video_id": video_id,
+                "link": f"https://youtube.com/watch?v={video_id}",
+                "thumbnail": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                "channel": channel or "YouTube",
+                "published_at": "",
+                "view_count": 0,
+                "duration": "",
+                "description": snippet,
+                "has_transcript": True,
+            })
+
+            if len(results) >= num_results:
+                break
+
+    except Exception as e:
+        print(f"[scraper] DuckDuckGo YouTube search failed: {e}")
+
+    # ── Fallback: curated YouTube search links ─────────────────────────────
+    if not results:
+        print(f"[scraper] DDG YouTube returned 0 results, generating fallback search link for: {topic}")
+        q = quote(topic + " tutorial")
+        # Return a single "search" card pointing to YouTube search
+        results = [{
+            "title": f"Search YouTube for '{topic}' tutorials",
+            "video_id": "",
+            "link": f"https://www.youtube.com/results?search_query={q}",
+            "thumbnail": "https://www.google.com/s2/favicons?domain=youtube.com&sz=128",
+            "channel": "YouTube Search",
+            "published_at": "",
+            "view_count": 0,
+            "duration": "",
+            "description": f"Click to browse YouTube tutorials on '{topic}'",
+            "has_transcript": False,
+        }]
+
+    return results[:num_results]
+
+
 def extract_with_requests(url: str) -> str:
     """Fallback: extract text using requests + BeautifulSoup."""
     try:

@@ -134,6 +134,46 @@ function CoursesPage() {
     qc.invalidateQueries({ queryKey: ["course-progress"] });
   }
 
+  async function saveWebResource(r: WebResource) {
+    if (!user) {
+      toast.info("Sign in to save articles");
+      throw new Error("not signed in");
+    }
+    const { error } = await supabase.from("course_progress").insert({
+      user_id: user.id,
+      course_title: r.title,
+      course_url: r.url,
+      source: r.site_label,
+      status: "bookmarked",
+    });
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    toast.success(`"${r.title.slice(0, 40)}" saved to learning list!`);
+    qc.invalidateQueries({ queryKey: ["course-progress"] });
+  }
+
+  async function saveCourse(r: WebResource) {
+    if (!user) {
+      toast.info("Sign in to save courses");
+      throw new Error("not signed in");
+    }
+    const { error } = await supabase.from("course_progress").insert({
+      user_id: user.id,
+      course_title: r.title,
+      course_url: r.url,
+      source: r.site_label,
+      status: "bookmarked",
+    });
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    toast.success(`"${r.title.slice(0, 40)}" saved to learning list!`);
+    qc.invalidateQueries({ queryKey: ["course-progress"] });
+  }
+
   async function updateStatus(id: string, status: "bookmarked" | "in_progress" | "completed") {
     const { error } = await supabase
       .from("course_progress")
@@ -313,7 +353,12 @@ function CoursesPage() {
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {webResources.map((r, i) => (
-                    <WebResourceCard key={r.url} resource={r} index={i} />
+                    <WebResourceCard
+                      key={r.url}
+                      resource={r}
+                      index={i}
+                      onSave={saveWebResource}
+                    />
                   ))}
                 </div>
               )}
@@ -333,7 +378,12 @@ function CoursesPage() {
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {courses.map((r, i) => (
-                    <WebResourceCard key={r.url} resource={r} index={i} />
+                    <WebResourceCard
+                      key={r.url}
+                      resource={r}
+                      index={i}
+                      onSave={saveCourse}
+                    />
                   ))}
                 </div>
               )}
