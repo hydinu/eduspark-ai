@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+youtube-transcript-api
+supabase
+requests
+python-dotenv
+duckduckgo-search
+# playwright removed for Vercel compatibility
+beautifulsoup4
+lxml

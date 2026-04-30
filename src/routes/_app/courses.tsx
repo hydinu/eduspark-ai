@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/AppShell";
 import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 export const Route = createFileRoute("/_app/courses")({
   component: CoursesPage,

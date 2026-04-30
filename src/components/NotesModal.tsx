@@ -7,7 +7,7 @@ import { Loader2, Download, AlertCircle, Play, FileText, CheckCircle } from "luc
 import { downloadNotesAsPDF, NotesData } from "@/lib/pdf-generator";
 import { toast } from "sonner";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 interface NotesModalProps {
   isOpen: boolean;

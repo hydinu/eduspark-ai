@@ -6,7 +6,7 @@ import { ExternalLink, FileText, Loader2, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { downloadNotesAsPDF, NotesData } from "@/lib/pdf-generator";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 export interface WebResource {
   title: string;

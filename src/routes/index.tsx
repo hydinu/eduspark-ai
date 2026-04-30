@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, Brain, MessageSquare, Mic, BookOpen, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
+import { NeuralBackground } from "@/components/NeuralBackground";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/")(
+{
   component: Landing,
 });
 
@@ -30,13 +32,18 @@ function Landing() {
         </div>
       </nav>
 
-      {/* Hero */}
+      {/* Hero with black hole animation */}
       <section className="relative overflow-hidden pt-32 pb-24 px-6">
-        <div className="absolute inset-0 bg-gradient-hero opacity-[0.07]" />
-        <div className="absolute top-20 -left-40 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
-        <div className="absolute bottom-0 -right-40 h-96 w-96 rounded-full bg-accent/30 blur-3xl" />
+        {/* Black hole animation (contained in hero) */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <NeuralBackground />
+        </div>
 
-        <div className="relative max-w-5xl mx-auto text-center">
+        {/* Existing decorative blurs */}
+        <div className="absolute top-20 -left-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl z-[1]" />
+        <div className="absolute bottom-0 -right-40 h-96 w-96 rounded-full bg-accent/15 blur-3xl z-[1]" />
+
+        <div className="relative z-[2] max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-soft text-primary text-xs font-medium mb-6">
             <Sparkles className="h-3.5 w-3.5" />
             Powered by advanced AI

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+
 import { aiGenerateQuiz } from "@/server/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -28,7 +28,7 @@ const KG_API_BASE = "https://outstandingom-knowledge-graph-env.hf.space";
 function QuizPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const genFn = useServerFn(aiGenerateQuiz);
+
 
   const [mode, setMode] = useState<Mode>("standard");
   const [topic, setTopic] = useState("");
@@ -53,7 +53,7 @@ function QuizPage() {
   const generate = useMutation({
     mutationFn: async () => {
       if (mode === "standard") {
-        return genFn({ data: { topic: topic.trim(), difficulty: difficulty as any, count: parseInt(count, 10) } });
+        return aiGenerateQuiz({ topic: topic.trim(), difficulty: difficulty as any, count: parseInt(count, 10) });
       } else {
         const resp = await fetch(`${KG_API_BASE}/reset`, { method: "POST" });
         if (!resp.ok) throw new Error("Knowledge Graph Engine failed to reset");

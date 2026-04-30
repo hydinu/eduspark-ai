@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+
 import { aiChat } from "@/server/ai.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ const SUGGESTIONS = [
 ];
 
 function ChatPage() {
-  const chat = useServerFn(aiChat);
+
   const { user } = useAuth();
   const qc = useQueryClient();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -101,7 +101,7 @@ function ChatPage() {
     mutationFn: async (vars: { history: Msg[]; cid: string }) => {
       // Filter out quiz data from history to stay within token limits and match schema
       const historyForAI = vars.history.map(m => ({ role: m.role, content: m.content }));
-      const r = await chat({ data: { messages: historyForAI } });
+      const r = await aiChat({ messages: historyForAI });
       return { r, cid: vars.cid };
     },
     onSuccess: async ({ r, cid }) => {
