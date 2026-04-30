@@ -32,6 +32,24 @@ SITE_LABELS = {
     "realpython.com": "Real Python",
 }
 
+COURSE_SITES = [
+    "coursera.org",
+    "udemy.com",
+    "edx.org",
+    "pluralsight.com",
+    "codecademy.com",
+    "khanacademy.org"
+]
+
+COURSE_LABELS = {
+    "coursera.org": "Coursera",
+    "udemy.com": "Udemy",
+    "edx.org": "edX",
+    "pluralsight.com": "Pluralsight",
+    "codecademy.com": "Codecademy",
+    "khanacademy.org": "Khan Academy"
+}
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -143,6 +161,95 @@ def search_duckduckgo(topic: str, num_results: int = 8) -> list[dict]:
 
     return results[:num_results]
 
+def search_courses(topic: str, num_results: int = 8) -> list[dict]:
+    """
+    Search DuckDuckGo HTML for full online courses from Coursera, Udemy, edX, etc.
+    """
+    site_filter = " OR ".join(f"site:{s}" for s in COURSE_SITES)
+    query = f"{topic} course {site_filter}"
+    url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
+
+    results = []
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        blocks = (
+            soup.find_all("div", class_="result__body")
+            or soup.find_all("div", class_="results_links_deep")
+            or soup.find_all("div", attrs={"data-nir": True})
+            or soup.find_all("article")
+        )
+
+        for block in blocks[:num_results * 2]:
+            title_el = (
+                block.find("a", class_="result__a")
+                or block.find("a", class_="result__url")
+                or block.find("h2", class_="result__title")
+                or block.find("a")
+            )
+            snippet_el = (
+                block.find("a", class_="result__snippet")
+                or block.find("div", class_="result__snippet")
+                or block.find("span", class_="result__snippet")
+            )
+            if not title_el:
+                continue
+
+            href = title_el.get("href", "")
+            if "uddg=" in href:
+                try:
+                    real_url = unquote(href.split("uddg=")[1].split("&")[0])
+                except Exception:
+                    real_url = href
+            else:
+                real_url = href
+
+            if not real_url.startswith("http"):
+                continue
+
+            parsed = urlparse(real_url)
+            domain = parsed.netloc.replace("www.", "")
+
+            if not any(site in domain for site in COURSE_SITES):
+                continue
+
+            site_label = next((v for k, v in COURSE_LABELS.items() if k in domain), domain)
+
+            results.append({
+                "title": title_el.get_text(strip=True),
+                "url": real_url,
+                "site": domain,
+                "site_label": site_label,
+                "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                "favicon": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+            })
+
+            if len(results) >= num_results:
+                break
+    except Exception as e:
+        print(f"[scraper] DuckDuckGo course search failed: {e}")
+
+    if not results:
+        q = quote(topic)
+        fallback_sites = [
+            ("coursera.org", "Coursera", f"https://www.coursera.org/search?query={q}"),
+            ("udemy.com", "Udemy", f"https://www.udemy.com/courses/search/?src=ukw&q={q}"),
+            ("edx.org", "edX", f"https://www.edx.org/search?q={q}"),
+            ("codecademy.com", "Codecademy", f"https://www.codecademy.com/search?query={q}"),
+        ]
+        for domain, label, search_url in fallback_sites[:num_results]:
+            results.append({
+                "title": f"Search for {topic} on {label}",
+                "url": search_url,
+                "site": domain,
+                "site_label": label,
+                "snippet": f"Find full courses and certifications on {topic}",
+                "favicon": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+            })
+
+    return results[:num_results]
+
 
 def extract_with_requests(url: str) -> str:
     """Fallback: extract text using requests + BeautifulSoup."""
@@ -170,9 +277,49 @@ def extract_with_requests(url: str) -> str:
         return f"Could not fetch page: {e}"
 
 
-def extract_page_content(url: str) -> str:
-    """Extract content using requests + BeautifulSoup (reliable on serverless)."""
-    return extract_with_requests(url)
+async def extract_with_playwright(url: str) -> str:
+    """Extract content using Playwright to handle JavaScript-rendered sites."""
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(
+                user_agent=HEADERS["User-Agent"],
+                extra_http_headers={"Accept-Language": HEADERS["Accept-Language"]}
+            )
+            # Route interception to block images/media and speed up loading
+            await page.route("**/*", lambda route: route.continue_() if route.request.resource_type in ["document", "script", "xhr", "fetch"] else route.abort())
+            
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            
+            # Wait a brief moment for JS frameworks to hydrate
+            await page.wait_for_timeout(2000)
+            
+            html = await page.content()
+            await browser.close()
+            
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header",
+                              "aside", "form", "noscript", ".advertisement"]):
+                tag.decompose()
+            
+            for sel in ["article", "main", "[role='main']", ".content", "#content",
+                        "#main-content", ".post-body", ".article-body", ".entry-content"]:
+                el = soup.select_one(sel)
+                if el:
+                    text = el.get_text(separator="\n", strip=True)
+                    if len(text) > 300:
+                        return text[:7000]
+            
+            return soup.get_text(separator="\n", strip=True)[:7000]
+    except Exception as e:
+        print(f"[scraper] Playwright failed: {e}")
+        return extract_with_requests(url)
+
+
+async def extract_page_content(url: str) -> str:
+    """Extract content using Playwright with requests fallback."""
+    return await extract_with_playwright(url)
 
 
 def generate_web_notes(content: str, title: str, url: str, call_groq_fn) -> dict:

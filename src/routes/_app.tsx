@@ -6,7 +6,8 @@ export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
     // Allow access if: (1) real Supabase session exists, OR (2) guest flag is set
     const { data } = await supabase.auth.getSession();
-    const isGuest = typeof window !== "undefined" && localStorage.getItem("eduspark_guest") === "true";
+    const isGuest =
+      typeof window !== "undefined" && localStorage.getItem("eduspark_guest") === "true";
 
     if (!data.session && !isGuest) {
       throw redirect({ to: "/auth" });

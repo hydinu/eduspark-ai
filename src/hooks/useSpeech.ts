@@ -27,7 +27,7 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
   const [interimTranscript, setInterimTranscript] = useState("");
 
   const recognitionRef = useRef<any>(null);
-  const wantListeningRef = useRef(false);       // true when we WANT the mic on
+  const wantListeningRef = useRef(false); // true when we WANT the mic on
   const onSpeechEndRef = useRef(options?.onSpeechEnd);
 
   // Keep callback ref fresh
@@ -49,7 +49,8 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
     }
 
     // Setup Speech Recognition
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = true;
@@ -80,7 +81,11 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
           // These are benign — auto-restart if we still want to listen
           if (wantListeningRef.current) {
             setTimeout(() => {
-              try { rec.start(); } catch (_) { /* ignore */ }
+              try {
+                rec.start();
+              } catch (_) {
+                /* ignore */
+              }
             }, 300);
           }
           return;
@@ -118,7 +123,9 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) {
-      toast.error("Your browser does not support Speech Recognition. Please try Google Chrome or Microsoft Edge.");
+      toast.error(
+        "Your browser does not support Speech Recognition. Please try Google Chrome or Microsoft Edge.",
+      );
       return;
     }
     // Clear previous transcript when starting a new listening session
@@ -146,7 +153,9 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
     if (!recognitionRef.current) return;
     try {
       recognitionRef.current.stop();
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
     setIsListening(false);
   }, []);
 
@@ -178,7 +187,7 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
       const voices = window.speechSynthesis.getVoices();
       if (!voices.length) return null;
 
-      const enVoices = voices.filter(v => v.lang.startsWith("en"));
+      const enVoices = voices.filter((v) => v.lang.startsWith("en"));
       if (!enVoices.length) return null;
 
       const priority = [
@@ -195,17 +204,15 @@ export function useSpeech(options?: UseSpeechOptions): UseSpeechReturn {
       ];
 
       for (const keyword of priority) {
-        const match = enVoices.find(v => v.name.includes(keyword));
+        const match = enVoices.find((v) => v.name.includes(keyword));
         if (match) return match;
       }
 
-      return enVoices.find(v => !v.localService) || enVoices[0];
+      return enVoices.find((v) => !v.localService) || enVoices[0];
     };
 
     // Split into sentences for more natural pacing
-    const sentences = cleanText
-      .split(/(?<=[.!?])\s+/)
-      .filter(s => s.trim().length > 0);
+    const sentences = cleanText.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
 
     const voice = pickVoice();
 

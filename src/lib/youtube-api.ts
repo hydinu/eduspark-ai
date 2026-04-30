@@ -38,55 +38,100 @@ export interface VideoFetchResult {
  */
 export function generateAIContent(title: string, description: string, topic: string): AIContent {
   const cleanDesc = description
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/[\n\r]+/g, ' ')
-    .replace(/\s{2,}/g, ' ')
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[\n\r]+/g, " ")
+    .replace(/\s{2,}/g, " ")
     .trim();
 
-  const allText = (title + ' ' + cleanDesc).toLowerCase();
-  const words = allText.split(/\W+/).filter(w => w.length > 3);
+  const allText = (title + " " + cleanDesc).toLowerCase();
+  const words = allText.split(/\W+/).filter((w) => w.length > 3);
 
   const freq: Record<string, number> = {};
-  words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+  words.forEach((w) => {
+    freq[w] = (freq[w] || 0) + 1;
+  });
   const topWords = Object.entries(freq)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 20)
-    .map(e => e[0]);
+    .map((e) => e[0]);
 
   const stops = new Set([
-    'this','that','with','from','have','will','your','what','about','been',
-    'they','their','more','when','also','than','them','some','into','each',
-    'make','like','just','over','only','such','very','most','even','does',
-    'through','after','these','would','could','other','which','those','then',
-    'first','where','before','should','still','being'
+    "this",
+    "that",
+    "with",
+    "from",
+    "have",
+    "will",
+    "your",
+    "what",
+    "about",
+    "been",
+    "they",
+    "their",
+    "more",
+    "when",
+    "also",
+    "than",
+    "them",
+    "some",
+    "into",
+    "each",
+    "make",
+    "like",
+    "just",
+    "over",
+    "only",
+    "such",
+    "very",
+    "most",
+    "even",
+    "does",
+    "through",
+    "after",
+    "these",
+    "would",
+    "could",
+    "other",
+    "which",
+    "those",
+    "then",
+    "first",
+    "where",
+    "before",
+    "should",
+    "still",
+    "being",
   ]);
-  const keywords = topWords.filter(w => !stops.has(w));
+  const keywords = topWords.filter((w) => !stops.has(w));
 
-  const keyConcepts = keywords.slice(0, 7).map(w =>
-    w.charAt(0).toUpperCase() + w.slice(1)
-  );
+  const keyConcepts = keywords.slice(0, 7).map((w) => w.charAt(0).toUpperCase() + w.slice(1));
 
-  const summaryBase = cleanDesc.length > 30
-    ? cleanDesc.substring(0, 350).replace(/\s\S*$/, '') + '...'
-    : `This video covers ${topic} in an educational and student-friendly format. Watch to learn the core concepts, explanations, and practical examples related to this topic.`;
+  const summaryBase =
+    cleanDesc.length > 30
+      ? cleanDesc.substring(0, 350).replace(/\s\S*$/, "") + "..."
+      : `This video covers ${topic} in an educational and student-friendly format. Watch to learn the core concepts, explanations, and practical examples related to this topic.`;
 
   const summary = `📚 "${title}" — ${summaryBase}`;
 
-  const explanation = cleanDesc.length > 50
-    ? `This video is about ${topic}. Here's what you'll learn:\n\n${cleanDesc.substring(0, 600).replace(/\s\S*$/, '')}...\n\nThe video breaks down complex ideas into simpler parts, making it great for students who are just starting to learn about ${topic}. Pay attention to the examples and try to relate them to what you already know!`
-    : `This video teaches you about ${topic} in a clear, easy-to-follow way. It covers the fundamental concepts and builds up to more advanced ideas step by step. Great for students who want a solid foundation in ${topic}. Take notes while watching and pause at key moments to test your understanding!`;
+  const explanation =
+    cleanDesc.length > 50
+      ? `This video is about ${topic}. Here's what you'll learn:\n\n${cleanDesc.substring(0, 600).replace(/\s\S*$/, "")}...\n\nThe video breaks down complex ideas into simpler parts, making it great for students who are just starting to learn about ${topic}. Pay attention to the examples and try to relate them to what you already know!`
+      : `This video teaches you about ${topic} in a clear, easy-to-follow way. It covers the fundamental concepts and builds up to more advanced ideas step by step. Great for students who want a solid foundation in ${topic}. Take notes while watching and pause at key moments to test your understanding!`;
 
   const quizQuestions = [
     `What are the main concepts covered in "${title}"?`,
     `Explain the most important idea from this video about ${topic} in your own words.`,
     `How does ${topic} apply to real-world scenarios? Give an example.`,
     `What are the key terms or vocabulary related to ${topic} mentioned in this video?`,
-    `If you had to teach ${topic} to a friend, what would you emphasize based on this video?`
+    `If you had to teach ${topic} to a friend, what would you emphasize based on this video?`,
   ];
 
   return {
     summary,
-    key_concepts: keyConcepts.length > 0 ? keyConcepts : [topic, 'Fundamentals', 'Examples', 'Practice', 'Review'],
+    key_concepts:
+      keyConcepts.length > 0
+        ? keyConcepts
+        : [topic, "Fundamentals", "Examples", "Practice", "Review"],
     explanation_for_students: explanation,
     quiz_questions: quizQuestions,
   };
@@ -99,8 +144,8 @@ function formatDuration(isoDuration: string): string {
   const h = parseInt(match[1] || "0");
   const m = parseInt(match[2] || "0");
   const s = parseInt(match[3] || "0");
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 async function fetchVideosViaBackend(topic: string): Promise<VideoFetchResult> {
@@ -121,14 +166,14 @@ async function fetchVideosViaBackend(topic: string): Promise<VideoFetchResult> {
     thumbnail: v.thumbnail,
     channel: v.channel,
     published_at: v.published_at,
-    view_count: typeof v.view_count === 'number' ? v.view_count : parseInt(v.view_count || '0'),
-    duration: v.duration || '',
-    description: v.description || '',
+    view_count: typeof v.view_count === "number" ? v.view_count : parseInt(v.view_count || "0"),
+    duration: v.duration || "",
+    description: v.description || "",
     has_transcript: v.has_transcript ?? false,
-    ai_content: generateAIContent(v.title, v.description || '', topic),
+    ai_content: generateAIContent(v.title, v.description || "", topic),
   }));
 
-  return { topic, videos, source: 'youtube-api' };
+  return { topic, videos, source: "youtube-api" };
 }
 
 async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult> {
@@ -137,12 +182,12 @@ async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult
   }
 
   const searchParams = new URLSearchParams({
-    part: 'snippet',
-    q: topic + ' tutorial course',
-    type: 'video',
+    part: "snippet",
+    q: topic + " tutorial course",
+    type: "video",
     maxResults: MAX_RESULTS.toString(),
-    order: 'relevance',
-    safeSearch: 'strict',
+    order: "relevance",
+    safeSearch: "strict",
     key: YOUTUBE_API_KEY,
   });
 
@@ -154,18 +199,18 @@ async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult
   const searchData = await searchRes.json();
 
   if (!searchData.items || searchData.items.length === 0) {
-    return { topic, videos: [], source: 'youtube-api' };
+    return { topic, videos: [], source: "youtube-api" };
   }
 
-  const videoIds = searchData.items.map((i: any) => i.id.videoId).join(',');
+  const videoIds = searchData.items.map((i: any) => i.id.videoId).join(",");
   const detailRes = await fetch(
     `${YOUTUBE_VIDEOS_URL}?${new URLSearchParams({
-      part: 'snippet,contentDetails,statistics',
+      part: "snippet,contentDetails,statistics",
       id: videoIds,
       key: YOUTUBE_API_KEY,
-    })}`
+    })}`,
   );
-  if (!detailRes.ok) throw new Error('Failed to fetch video details');
+  if (!detailRes.ok) throw new Error("Failed to fetch video details");
   const detailData = await detailRes.json();
 
   const videos = detailData.items.map((item: any) => {
@@ -175,31 +220,36 @@ async function fetchVideosViaYouTubeAPI(topic: string): Promise<VideoFetchResult
       title: snippet.title,
       video_id: item.id,
       link: `https://youtube.com/watch?v=${item.id}`,
-      thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url,
+      thumbnail:
+        snippet.thumbnails?.high?.url ||
+        snippet.thumbnails?.medium?.url ||
+        snippet.thumbnails?.default?.url,
       channel: snippet.channelTitle,
       published_at: snippet.publishedAt,
       view_count: parseInt(stats.viewCount || "0"),
       duration: formatDuration(item.contentDetails.duration),
-      description: snippet.description || '',
+      description: snippet.description || "",
       has_transcript: false, // Don't know via public API without extra calls
-      ai_content: generateAIContent(snippet.title, snippet.description || '', topic),
+      ai_content: generateAIContent(snippet.title, snippet.description || "", topic),
     };
   });
 
-  return { topic, videos, source: 'youtube-api' };
+  return { topic, videos, source: "youtube-api" };
 }
 
 export async function fetchYouTubeVideos(topic: string): Promise<VideoFetchResult> {
   try {
-    console.info('[api] Trying Python backend for video search…');
+    console.info("[api] Trying Python backend for video search…");
     const result = await fetchVideosViaBackend(topic);
     console.info(`[api] Backend returned ${result.videos.length} videos`);
     return result;
   } catch (backendErr: any) {
-    console.warn('[api] Backend not running, falling back to YouTube Data API:', backendErr.message);
+    console.warn(
+      "[api] Backend not running, falling back to YouTube Data API:",
+      backendErr.message,
+    );
     const result = await fetchVideosViaYouTubeAPI(topic);
     console.info(`[api] YouTube API returned ${result.videos.length} videos`);
     return result;
   }
 }
-

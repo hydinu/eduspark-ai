@@ -75,7 +75,9 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
           src={resource.favicon}
           alt={resource.site_label}
           className="w-4 h-4 rounded-sm"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
         />
         <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-medium">
           {resource.site_label}
@@ -101,12 +103,7 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
 
       {/* Actions */}
       <div className="flex gap-2 mt-auto">
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1 h-8 text-xs"
-          asChild
-        >
+        <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" asChild>
           <a href={resource.url} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="h-3 w-3 mr-1.5" />
             Open Article
@@ -121,11 +118,17 @@ export function WebResourceCard({ resource, index }: WebResourceCardProps) {
           variant={done ? "secondary" : "default"}
         >
           {loading ? (
-            <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Generating…</>
+            <>
+              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Generating…
+            </>
           ) : done ? (
-            <><CheckCircle className="h-3 w-3 mr-1.5 text-green-500" /> Downloaded</>
+            <>
+              <CheckCircle className="h-3 w-3 mr-1.5 text-green-500" /> Downloaded
+            </>
           ) : (
-            <><FileText className="h-3 w-3 mr-1.5" /> Quick Notes PDF</>
+            <>
+              <FileText className="h-3 w-3 mr-1.5" /> Quick Notes PDF
+            </>
           )}
         </Button>
       </div>

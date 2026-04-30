@@ -13,13 +13,16 @@ interface HistoryModalProps {
   onClose: () => void;
 }
 
-const CONFIG: Record<Exclude<HistoryType, null>, {
-  title: string;
-  subtitle: string;
-  icon: any;
-  gradient: string;
-  panel: ReactNode;
-}> = {
+const CONFIG: Record<
+  Exclude<HistoryType, null>,
+  {
+    title: string;
+    subtitle: string;
+    icon: any;
+    gradient: string;
+    panel: ReactNode;
+  }
+> = {
   quiz: {
     title: "Quiz History",
     subtitle: "All your quiz attempts with detailed breakdowns",
@@ -84,9 +87,7 @@ export function HistoryModal({ type, onClose }: HistoryModalProps) {
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {cfg.panel}
-        </div>
+        <div className="flex-1 overflow-y-auto p-6">{cfg.panel}</div>
       </div>
     </>
   );

@@ -14,8 +14,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
-from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes
+from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes, search_courses
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
 # Load .env file automatically
 load_dotenv()
@@ -611,13 +612,22 @@ def web_resources(topic: str = Query(..., min_length=1)):
     return {"topic": topic, "resources": results}
 
 
+@app.get("/api/course-suggestions")
+def course_suggestions(topic: str = Query(..., min_length=1)):
+    """
+    Search DuckDuckGo for full online courses about a topic.
+    """
+    results = search_courses(topic, num_results=6)
+    return {"topic": topic, "courses": results}
+
+
 class WebNotesRequest(BaseModel):
     url: str
     title: str = ""
 
 
 @app.post("/api/web-page-notes")
-def web_page_notes(body: WebNotesRequest):
+async def web_page_notes(body: WebNotesRequest):
     """
     1. Use Playwright to fetch full rendered content from the URL.
     2. Use Groq Llama 3 to generate structured timestamped notes.
@@ -628,7 +638,7 @@ def web_page_notes(body: WebNotesRequest):
 
     # Step 1: Extract content
     print(f"[web] Extracting content from: {body.url}")
-    content = extract_page_content(body.url)
+    content = await extract_page_content(body.url)
 
     if not content or len(content.strip()) < 100:
         raise HTTPException(

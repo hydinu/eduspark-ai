@@ -47,7 +47,7 @@ function AuthPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Welcome back! 🎉");
+      toast.success("Welcome back! ");
       navigate({ to: "/dashboard" });
     }
   };
@@ -79,7 +79,7 @@ function AuthPage() {
         toast.error(error.message);
       }
     } else {
-      toast.success("Verification code sent to your email! ✉️");
+      toast.success("Verification code sent to your email! ");
       setShowOtp(true);
     }
   };
@@ -99,7 +99,7 @@ function AuthPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Email verified! Welcome to EduSpark. 🎉");
+      toast.success("Email verified! Welcome to EduSpark. ");
       navigate({ to: "/dashboard" });
     }
   };
@@ -116,7 +116,7 @@ function AuthPage() {
     if (error) {
       toast.error(`Error: ${error.message}`);
     } else {
-      toast.success("New code sent! Please check your spam folder too. ✉️");
+      toast.success("New code sent! Please check your spam folder too. ");
     }
     setLoading(false);
   };
@@ -151,7 +151,7 @@ function AuthPage() {
         navigate({ to: "/dashboard" });
       }
     } else {
-      toast.success("Logged in as Demo User! 🎉");
+      toast.success("Logged in as Demo User! ");
       navigate({ to: "/dashboard" });
     }
     setLoading(false);

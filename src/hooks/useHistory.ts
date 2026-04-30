@@ -62,7 +62,7 @@ export function useQuizHistory(limit = 50) {
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw new Error(error.message);
-      return (data ?? []) as QuizAttempt[];
+      return (data ?? []) as unknown as QuizAttempt[];
     },
   });
 }
@@ -185,13 +185,15 @@ export function useDashboardStats() {
         avgPct,
         attempts: att.length,
         quizCount: quizzes.count ?? 0,
-        coursesBookmarked: c.filter(x => x.status === "bookmarked").length,
-        coursesInProgress: c.filter(x => x.status === "in_progress").length,
-        coursesDone: c.filter(x => x.status === "completed").length,
+        coursesBookmarked: c.filter((x) => x.status === "bookmarked").length,
+        coursesInProgress: c.filter((x) => x.status === "in_progress").length,
+        coursesDone: c.filter((x) => x.status === "completed").length,
         recentAttempts: att.slice(0, 5),
         interviewCount: interviews.data?.length ?? 0,
         avgInterviewScore: interviews.data?.length
-          ? Math.round(interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length)
+          ? Math.round(
+              interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length,
+            )
           : 0,
       };
     },

@@ -9,8 +9,17 @@ import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/AppShell";
 import { HistoryModal, type HistoryType } from "@/components/history/HistoryModal";
 import {
-  LayoutDashboard, MessageSquare, BookOpen, Brain, Mic,
-  TrendingUp, Sparkles, ArrowRight, Trophy, Flame, ChevronRight,
+  LayoutDashboard,
+  MessageSquare,
+  BookOpen,
+  Brain,
+  Mic,
+  TrendingUp,
+  Sparkles,
+  ArrowRight,
+  Trophy,
+  Flame,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,10 +36,18 @@ function Dashboard() {
     enabled: !!user,
     queryFn: async () => {
       const [attempts, quizzes, courses, interviews] = await Promise.all([
-        supabase.from("quiz_attempts").select("score,total,created_at").order("created_at", { ascending: false }).limit(20),
+        supabase
+          .from("quiz_attempts")
+          .select("score,total,created_at")
+          .order("created_at", { ascending: false })
+          .limit(20),
         supabase.from("quizzes").select("id", { count: "exact", head: true }),
         supabase.from("course_progress").select("status"),
-        supabase.from("interview_sessions").select("score,created_at").order("created_at", { ascending: false }).limit(5),
+        supabase
+          .from("interview_sessions")
+          .select("score,created_at")
+          .order("created_at", { ascending: false })
+          .limit(5),
       ]);
       const att = attempts.data ?? [];
       const totalScore = att.reduce((a, b) => a + b.score, 0);
@@ -41,13 +58,15 @@ function Dashboard() {
         avgPct,
         attempts: att.length,
         quizCount: quizzes.count ?? 0,
-        coursesBookmarked: c.filter(x => x.status === "bookmarked").length,
-        coursesInProgress: c.filter(x => x.status === "in_progress").length,
-        coursesDone: c.filter(x => x.status === "completed").length,
+        coursesBookmarked: c.filter((x) => x.status === "bookmarked").length,
+        coursesInProgress: c.filter((x) => x.status === "in_progress").length,
+        coursesDone: c.filter((x) => x.status === "completed").length,
         recentAttempts: att.slice(0, 5),
         interviewCount: interviews.data?.length ?? 0,
         avgInterviewScore: interviews.data?.length
-          ? Math.round(interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length)
+          ? Math.round(
+              interviews.data.reduce((a, b) => a + (b.score ?? 0), 0) / interviews.data.length,
+            )
           : 0,
       };
     },
@@ -62,7 +81,7 @@ function Dashboard() {
   const name = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "there";
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto">
       <PageHeader
         icon={LayoutDashboard}
         title={`${greet}, ${name} 👋`}
@@ -70,15 +89,31 @@ function Dashboard() {
       />
 
       {/* Quick action cards */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <ActionCard to="/chat"      icon={MessageSquare} title="Ask AI Tutor"    subtitle="Get instant answers" gradient />
-        <ActionCard to="/courses"   icon={BookOpen}      title="Find Courses"    subtitle="Personalized picks" />
-        <ActionCard to="/quizzes"   icon={Brain}         title="Take a Quiz"     subtitle="Test yourself" />
-        <ActionCard to="/interview" icon={Mic}           title="Mock Interview"  subtitle="Practice & improve" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <ActionCard
+          to="/chat"
+          icon={MessageSquare}
+          title="Ask AI Tutor"
+          subtitle="Get instant answers"
+          gradient
+        />
+        <ActionCard
+          to="/courses"
+          icon={BookOpen}
+          title="Find Courses"
+          subtitle="Personalized picks"
+        />
+        <ActionCard to="/quizzes" icon={Brain} title="Take a Quiz" subtitle="Test yourself" />
+        <ActionCard
+          to="/interview"
+          icon={Mic}
+          title="Mock Interview"
+          subtitle="Practice & improve"
+        />
       </div>
 
       {/* ── Clickable stat cards ── */}
-      <div className="grid lg:grid-cols-3 gap-5 mb-8">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 mb-6 sm:mb-8">
         {/* Quiz score card */}
         <button
           id="dashboard-quiz-stat-card"
@@ -86,7 +121,7 @@ function Dashboard() {
           className="text-left group"
           title="Click to view quiz history"
         >
-          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+          <Card className="p-4 sm:p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-muted-foreground">Average quiz score</span>
               <div className="flex items-center gap-1">
@@ -98,7 +133,9 @@ function Dashboard() {
             <Progress value={stats?.avgPct ?? 0} className="mt-3 h-2" />
             <p className="text-xs text-muted-foreground mt-2">
               {stats?.attempts ?? 0} attempts so far
-              <span className="text-primary ml-2 font-medium group-hover:underline">View history →</span>
+              <span className="text-primary ml-2 font-medium group-hover:underline">
+                View history →
+              </span>
             </p>
           </Card>
         </button>
@@ -110,7 +147,7 @@ function Dashboard() {
           className="text-left group"
           title="Click to view course history"
         >
-          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+          <Card className="p-4 sm:p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-muted-foreground">Courses tracked</span>
               <div className="flex items-center gap-1">
@@ -119,21 +156,25 @@ function Dashboard() {
               </div>
             </div>
             <div className="text-3xl font-bold">
-              {(stats?.coursesBookmarked ?? 0) + (stats?.coursesInProgress ?? 0) + (stats?.coursesDone ?? 0)}
+              {(stats?.coursesBookmarked ?? 0) +
+                (stats?.coursesInProgress ?? 0) +
+                (stats?.coursesDone ?? 0)}
             </div>
             <div className="flex gap-4 mt-3">
               {[
-                { emoji: "📌", label: "Saved",      val: stats?.coursesBookmarked ?? 0 },
+                { emoji: "📌", label: "Saved", val: stats?.coursesBookmarked ?? 0 },
                 { emoji: "🚀", label: "In progress", val: stats?.coursesInProgress ?? 0 },
-                { emoji: "✅", label: "Done",        val: stats?.coursesDone ?? 0 },
-              ].map(s => (
+                { emoji: "✅", label: "Done", val: stats?.coursesDone ?? 0 },
+              ].map((s) => (
                 <div key={s.label} className="text-center">
                   <div className="text-lg font-bold">{s.val}</div>
                   <div className="text-[10px] text-muted-foreground">{s.label}</div>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-primary mt-3 font-medium group-hover:underline">View history →</p>
+            <p className="text-xs text-primary mt-3 font-medium group-hover:underline">
+              View history →
+            </p>
           </Card>
         </button>
 
@@ -144,7 +185,7 @@ function Dashboard() {
           className="text-left group"
           title="Click to view interview history"
         >
-          <Card className="p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
+          <Card className="p-4 sm:p-6 hover:shadow-soft hover:border-primary/30 transition-all cursor-pointer group-hover:scale-[1.01]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-muted-foreground">Interview practice</span>
               <div className="flex items-center gap-1">
@@ -156,9 +197,14 @@ function Dashboard() {
             <div className="mt-3 flex items-center gap-2">
               <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
                 <div
-                  className={cn("h-full rounded-full transition-all",
-                    (stats?.avgInterviewScore ?? 0) >= 80 ? "bg-emerald-500"
-                    : (stats?.avgInterviewScore ?? 0) >= 50 ? "bg-amber-500" : "bg-red-400")}
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    (stats?.avgInterviewScore ?? 0) >= 80
+                      ? "bg-emerald-500"
+                      : (stats?.avgInterviewScore ?? 0) >= 50
+                        ? "bg-amber-500"
+                        : "bg-red-400",
+                  )}
                   style={{ width: `${stats?.avgInterviewScore ?? 0}%` }}
                 />
               </div>
@@ -166,14 +212,16 @@ function Dashboard() {
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Avg score
-              <span className="text-primary ml-2 font-medium group-hover:underline">View history →</span>
+              <span className="text-primary ml-2 font-medium group-hover:underline">
+                View history →
+              </span>
             </p>
           </Card>
         </button>
       </div>
 
       {/* Recent quiz activity */}
-      <Card className="p-6">
+      <Card className="p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-primary" /> Recent quiz attempts
@@ -182,25 +230,38 @@ function Dashboard() {
             View all <ArrowRight className="ml-1 h-3.5 w-3.5" />
           </Button>
         </div>
-        {(!stats?.recentAttempts || stats.recentAttempts.length === 0) ? (
+        {!stats?.recentAttempts || stats.recentAttempts.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground">
             <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No quiz attempts yet. Start your first quiz!</p>
-            <Link to="/quizzes"><Button className="mt-4">Generate a quiz</Button></Link>
+            <Link to="/quizzes">
+              <Button className="mt-4">Generate a quiz</Button>
+            </Link>
           </div>
         ) : (
           <div className="space-y-2">
             {stats.recentAttempts.map((a, i) => {
               const pct = Math.round((a.score / a.total) * 100);
               return (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary/80 transition-colors">
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary/80 transition-colors"
+                >
                   <div>
                     <div className="text-sm font-medium">Quiz attempt</div>
-                    <div className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(a.created_at).toLocaleString()}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold">{a.score}/{a.total}</div>
-                    <div className={`text-xs font-medium ${pct >= 70 ? "text-emerald-500" : pct >= 50 ? "text-amber-500" : "text-red-500"}`}>{pct}%</div>
+                    <div className="text-sm font-bold">
+                      {a.score}/{a.total}
+                    </div>
+                    <div
+                      className={`text-xs font-medium ${pct >= 70 ? "text-emerald-500" : pct >= 50 ? "text-amber-500" : "text-red-500"}`}
+                    >
+                      {pct}%
+                    </div>
                   </div>
                 </div>
               );
@@ -215,15 +276,44 @@ function Dashboard() {
   );
 }
 
-function ActionCard({ to, icon: Icon, title, subtitle, gradient }: { to: string; icon: any; title: string; subtitle: string; gradient?: boolean }) {
+function ActionCard({
+  to,
+  icon: Icon,
+  title,
+  subtitle,
+  gradient,
+}: {
+  to: string;
+  icon: any;
+  title: string;
+  subtitle: string;
+  gradient?: boolean;
+}) {
   return (
     <Link to={to as any}>
-      <Card className={cn("p-5 hover:shadow-soft transition-all group cursor-pointer h-full", gradient ? "bg-gradient-primary text-primary-foreground border-0" : "")}>
-        <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center mb-3", gradient ? "bg-white/20" : "bg-primary-soft text-primary")}>
+      <Card
+        className={cn(
+          "p-5 hover:shadow-soft transition-all group cursor-pointer h-full",
+          gradient ? "bg-gradient-primary text-primary-foreground border-0" : "",
+        )}
+      >
+        <div
+          className={cn(
+            "h-10 w-10 rounded-lg flex items-center justify-center mb-3",
+            gradient ? "bg-white/20" : "bg-primary-soft text-primary",
+          )}
+        >
           <Icon className="h-5 w-5" />
         </div>
         <div className="font-semibold">{title}</div>
-        <div className={cn("text-xs mt-0.5", gradient ? "text-primary-foreground/80" : "text-muted-foreground")}>{subtitle}</div>
+        <div
+          className={cn(
+            "text-xs mt-0.5",
+            gradient ? "text-primary-foreground/80" : "text-muted-foreground",
+          )}
+        >
+          {subtitle}
+        </div>
         <ArrowRight className="h-4 w-4 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" />
       </Card>
     </Link>
