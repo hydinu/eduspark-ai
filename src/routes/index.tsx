@@ -1,18 +1,42 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, Brain, MessageSquare, Mic, BookOpen, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
+import {
+  GraduationCap,
+  Brain,
+  MessageSquare,
+  Mic,
+  BookOpen,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
+} from "lucide-react";
 import { NeuralBackground } from "@/components/NeuralBackground";
 
-export const Route = createFileRoute("/")(
-{
+export const Route = createFileRoute("/")({
   component: Landing,
 });
 
 const features = [
-  { icon: MessageSquare, title: "AI Tutor Chat", desc: "Ask anything, get instant explanations from your personal AI tutor." },
-  { icon: BookOpen, title: "Smart Course Suggestions", desc: "Personalized courses, projects and tutorials based on your goals." },
-  { icon: Brain, title: "Auto-Generated Quizzes", desc: "Test yourself on any topic with instantly generated quizzes." },
-  { icon: Mic, title: "Interview Practice", desc: "Mock technical interviews with real-time AI feedback." },
+  {
+    icon: MessageSquare,
+    title: "AI Tutor Chat",
+    desc: "Ask anything, get instant explanations from your personal AI tutor.",
+  },
+  {
+    icon: BookOpen,
+    title: "Smart Course Suggestions",
+    desc: "Personalized courses, projects and tutorials based on your goals.",
+  },
+  {
+    icon: Brain,
+    title: "Auto-Generated Quizzes",
+    desc: "Test yourself on any topic with instantly generated quizzes.",
+  },
+  {
+    icon: Mic,
+    title: "Interview Practice",
+    desc: "Mock technical interviews with real-time AI feedback.",
+  },
 ];
 
 function Landing() {
@@ -27,8 +51,12 @@ function Landing() {
           <span className="font-bold text-lg">EduSpark</span>
         </Link>
         <div className="flex items-center gap-2">
-          <Link to="/auth"><Button variant="ghost">Sign In</Button></Link>
-          <Link to="/auth"><Button>Get started</Button></Link>
+          <Link to="/auth">
+            <Button variant="ghost">Sign In</Button>
+          </Link>
+          <Link to="/auth">
+            <Button>Get started</Button>
+          </Link>
         </div>
       </nav>
 
@@ -49,12 +77,15 @@ function Landing() {
             Powered by advanced AI
           </div>
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
-            Your AI-powered<br />
-            <span className="bg-gradient-primary bg-clip-text text-transparent">learning companion</span>
+            Your AI-powered
+            <br />
+            <span className="bg-gradient-primary bg-clip-text text-transparent">
+              learning companion
+            </span>
           </h1>
           <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto">
-            Get personalized course suggestions, instant tutoring, auto-generated quizzes,
-            and interview practice — all in one beautifully simple workspace.
+            Get personalized course suggestions, instant tutoring, auto-generated quizzes, and
+            interview practice — all in one beautifully simple workspace.
           </p>
           <div className="mt-10 flex items-center justify-center gap-3">
             <Link to="/auth">
@@ -88,7 +119,10 @@ function Landing() {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {features.map((f) => (
-              <div key={f.title} className="bg-card rounded-2xl p-6 shadow-card border hover:shadow-soft transition-shadow">
+              <div
+                key={f.title}
+                className="bg-card rounded-2xl p-6 shadow-card border hover:shadow-soft transition-shadow"
+              >
                 <div className="h-11 w-11 rounded-xl bg-primary-soft text-primary flex items-center justify-center mb-4">
                   <f.icon className="h-5 w-5" />
                 </div>
@@ -103,8 +137,12 @@ function Landing() {
       {/* CTA */}
       <section className="py-24 px-6">
         <div className="max-w-3xl mx-auto bg-gradient-primary rounded-3xl p-10 md:p-14 text-center shadow-glow">
-          <h2 className="text-3xl md:text-4xl font-bold text-primary-foreground">Ready to level up your learning?</h2>
-          <p className="mt-3 text-primary-foreground/80">Join students using AI to study smarter, not harder.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-primary-foreground">
+            Ready to level up your learning?
+          </h2>
+          <p className="mt-3 text-primary-foreground/80">
+            Join students using AI to study smarter, not harder.
+          </p>
           <Link to="/auth" className="inline-block mt-7">
             <Button size="lg" variant="secondary" className="h-12 px-6 text-base">
               Get started — it's free

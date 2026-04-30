@@ -11,10 +11,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/AppShell";
-import { BookOpen, Loader2, Search, ExternalLink, Bookmark, BookmarkCheck, Play, CheckCircle2, Sparkles, Youtube, Trash2, FileText, Globe } from "lucide-react";
+import {
+  BookOpen,
+  Loader2,
+  Search,
+  ExternalLink,
+  Bookmark,
+  BookmarkCheck,
+  Play,
+  CheckCircle2,
+  Sparkles,
+  Youtube,
+  Trash2,
+  FileText,
+  Globe,
+} from "lucide-react";
 import { toast } from "sonner";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
@@ -23,10 +41,18 @@ export const Route = createFileRoute("/_app/courses")({
   component: CoursesPage,
 });
 
-type Resource = { title: string; type: string; provider: string; description: string; estimated_hours: number; difficulty: string; search_query: string };
+type Resource = {
+  title: string;
+  type: string;
+  provider: string;
+  description: string;
+  estimated_hours: number;
+  difficulty: string;
+  search_query: string;
+};
 
 function formatViews(n: number): string {
-  if (!n || n === 0) return '';
+  if (!n || n === 0) return "";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M views`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K views`;
   return `${n} views`;
@@ -39,14 +65,18 @@ function CoursesPage() {
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [results, setResults] = useState<YouTubeVideo[]>([]);
   const [webResources, setWebResources] = useState<WebResource[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<{url: string, title: string} | null>(null);
-  const [activeTab, setActiveTab] = useState<"videos" | "articles">("videos");
+  const [courses, setCourses] = useState<WebResource[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<{ url: string; title: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<"videos" | "articles" | "courses">("videos");
 
   const { data: saved } = useQuery({
     queryKey: ["course-progress", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase.from("course_progress").select("*").order("created_at", { ascending: false });
+      const { data } = await supabase
+        .from("course_progress")
+        .select("*")
+        .order("created_at", { ascending: false });
       return data ?? [];
     },
   });
@@ -54,29 +84,41 @@ function CoursesPage() {
   const suggest = useMutation({
     mutationFn: async () => {
       // Fetch YouTube videos and web resources in parallel
-      const [ytResult, webResult] = await Promise.allSettled([
+      const [ytResult, webResult, courseResult] = await Promise.allSettled([
         fetchYouTubeVideos(topic.trim()),
         fetch(`${BACKEND_URL}/api/web-resources?topic=${encodeURIComponent(topic.trim())}`)
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(d => d.resources as WebResource[])
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((d) => d.resources as WebResource[])
+          .catch(() => [] as WebResource[]),
+        fetch(`${BACKEND_URL}/api/course-suggestions?topic=${encodeURIComponent(topic.trim())}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((d) => d.courses as WebResource[])
           .catch(() => [] as WebResource[]),
       ]);
       return {
         videos: ytResult.status === "fulfilled" ? ytResult.value.videos : [],
         webResources: webResult.status === "fulfilled" ? webResult.value : [],
+        courses: courseResult.status === "fulfilled" ? courseResult.value : [],
       };
     },
     onSuccess: (r) => {
       setResults(r.videos);
       setWebResources(r.webResources);
-      if (r.videos.length === 0 && r.webResources.length === 0) toast.info("No results, try another topic.");
+      setCourses(r.courses);
+      if (r.videos.length === 0 && r.webResources.length === 0 && r.courses.length === 0)
+        toast.info("No results, try another topic.");
       if (r.videos.length > 0) setActiveTab("videos");
+      else if (r.courses.length > 0) setActiveTab("courses");
+      else if (r.webResources.length > 0) setActiveTab("articles");
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   async function bookmark(r: YouTubeVideo) {
-    if (!user) { toast.info("Sign in to save courses"); return; }
+    if (!user) {
+      toast.info("Sign in to save courses");
+      return;
+    }
     const { error } = await supabase.from("course_progress").insert({
       user_id: user.id,
       course_title: r.title,
@@ -84,33 +126,85 @@ function CoursesPage() {
       source: r.channel,
       status: "bookmarked",
     });
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Bookmarked!");
     qc.invalidateQueries({ queryKey: ["course-progress"] });
   }
 
+  async function saveWebResource(r: WebResource) {
+    if (!user) {
+      toast.info("Sign in to save articles");
+      throw new Error("not signed in");
+    }
+    const { error } = await supabase.from("course_progress").insert({
+      user_id: user.id,
+      course_title: r.title,
+      course_url: r.url,
+      source: r.site_label,
+      status: "bookmarked",
+    });
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    toast.success(`"${r.title.slice(0, 40)}" saved to learning list!`);
+    qc.invalidateQueries({ queryKey: ["course-progress"] });
+  }
+
+  async function saveCourse(r: WebResource) {
+    if (!user) {
+      toast.info("Sign in to save courses");
+      throw new Error("not signed in");
+    }
+    const { error } = await supabase.from("course_progress").insert({
+      user_id: user.id,
+      course_title: r.title,
+      course_url: r.url,
+      source: r.site_label,
+      status: "bookmarked",
+    });
+    if (error) {
+      toast.error(error.message);
+      throw error;
+    }
+    toast.success(`"${r.title.slice(0, 40)}" saved to learning list!`);
+    qc.invalidateQueries({ queryKey: ["course-progress"] });
+  }
+
   async function updateStatus(id: string, status: "bookmarked" | "in_progress" | "completed") {
-    const { error } = await supabase.from("course_progress").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    const { error } = await supabase
+      .from("course_progress")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     qc.invalidateQueries({ queryKey: ["course-progress"] });
   }
 
   async function remove(id: string) {
     const { error } = await supabase.from("course_progress").delete().eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Removed");
     qc.invalidateQueries({ queryKey: ["course-progress"] });
   }
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-6xl mx-auto">
       <PageHeader
         icon={BookOpen}
         title="Course Suggestions"
         description="Tell us a topic — our AI will recommend the best learning resources."
       />
 
-      <Card className="p-5 mb-8 bg-gradient-card border-primary/10">
+      <Card className="p-3 sm:p-5 mb-6 sm:mb-8 bg-gradient-card border-primary/10">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -119,11 +213,15 @@ function CoursesPage() {
               onChange={(e) => setTopic(e.target.value)}
               placeholder="e.g. Python data science, React hooks, Machine Learning…"
               className="pl-9 h-11"
-              onKeyDown={(e) => { if (e.key === "Enter" && topic.trim().length >= 2) suggest.mutate(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && topic.trim().length >= 2) suggest.mutate();
+              }}
             />
           </div>
           <Select value={level} onValueChange={(v) => setLevel(v as any)}>
-            <SelectTrigger className="w-full sm:w-44 h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-44 h-11">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="beginner">Beginner</SelectItem>
               <SelectItem value="intermediate">Intermediate</SelectItem>
@@ -135,19 +233,25 @@ function CoursesPage() {
             disabled={topic.trim().length < 2 || suggest.isPending}
             className="h-11 px-6"
           >
-            {suggest.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {suggest.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
             Suggest
           </Button>
         </div>
       </Card>
 
-      {(results.length > 0 || webResources.length > 0) && (
+      {(results.length > 0 || webResources.length > 0 || courses.length > 0) && (
         <div className="mb-10">
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={() => setActiveTab("videos")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === "videos" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                activeTab === "videos"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
               }`}
             >
               <Youtube className="h-3.5 w-3.5" />
@@ -156,11 +260,24 @@ function CoursesPage() {
             <button
               onClick={() => setActiveTab("articles")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === "articles" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                activeTab === "articles"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
               }`}
             >
               <Globe className="h-3.5 w-3.5" />
               Web Articles {webResources.length > 0 && `(${webResources.length})`}
+            </button>
+            <button
+              onClick={() => setActiveTab("courses")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "courses"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Full Courses {courses.length > 0 && `(${courses.length})`}
             </button>
           </div>
 
@@ -171,18 +288,34 @@ function CoursesPage() {
                 <Card key={i} className="p-5 hover:shadow-soft transition-shadow flex flex-col">
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <h3 className="font-semibold leading-snug">{r.title}</h3>
-                    <Badge variant="secondary" className="shrink-0">Video</Badge>
+                    <Badge variant="secondary" className="shrink-0">
+                      Video
+                    </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{r.description || r.ai_content?.summary}</p>
+                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                    {r.description || r.ai_content?.summary}
+                  </p>
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {r.ai_content?.key_concepts?.slice(0, 3).map(concept => (
-                      <Badge key={concept} variant="outline" className="text-[10px]">{concept}</Badge>
+                    {r.ai_content?.key_concepts?.slice(0, 3).map((concept) => (
+                      <Badge key={concept} variant="outline" className="text-[10px]">
+                        {concept}
+                      </Badge>
                     ))}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
                     <span>{r.channel}</span>
-                    {formatViews(r.view_count) && <><span>•</span><span>{formatViews(r.view_count)}</span></>}
-                    {r.duration && <><span>•</span><span>{r.duration}</span></>}
+                    {formatViews(r.view_count) && (
+                      <>
+                        <span>•</span>
+                        <span>{formatViews(r.view_count)}</span>
+                      </>
+                    )}
+                    {r.duration && (
+                      <>
+                        <span>•</span>
+                        <span>{r.duration}</span>
+                      </>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" asChild className="flex-1 min-w-[80px]">
@@ -190,7 +323,12 @@ function CoursesPage() {
                         <Youtube className="h-3.5 w-3.5 mr-1.5" /> Watch
                       </a>
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => setSelectedVideo({ url: r.link, title: r.title })} className="flex-1 min-w-[80px]">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSelectedVideo({ url: r.link, title: r.title })}
+                      className="flex-1 min-w-[80px]"
+                    >
                       <FileText className="h-3.5 w-3.5 mr-1.5" /> Notes
                     </Button>
                     <Button size="sm" onClick={() => bookmark(r)} className="flex-1 min-w-[80px]">
@@ -208,12 +346,44 @@ function CoursesPage() {
               {webResources.length === 0 ? (
                 <Card className="p-8 text-center text-muted-foreground">
                   <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No web articles found. Make sure the Python backend is running.</p>
+                  <p className="text-sm">
+                    No web articles found. Make sure the Python backend is running.
+                  </p>
                 </Card>
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {webResources.map((r, i) => (
-                    <WebResourceCard key={r.url} resource={r} index={i} />
+                    <WebResourceCard
+                      key={r.url}
+                      resource={r}
+                      index={i}
+                      onSave={saveWebResource}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Courses Tab */}
+          {activeTab === "courses" && (
+            <div>
+              {courses.length === 0 ? (
+                <Card className="p-8 text-center text-muted-foreground">
+                  <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">
+                    No full courses found. Make sure the Python backend is running.
+                  </p>
+                </Card>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {courses.map((r, i) => (
+                    <WebResourceCard
+                      key={r.url}
+                      resource={r}
+                      index={i}
+                      onSave={saveCourse}
+                    />
                   ))}
                 </div>
               )}
@@ -224,7 +394,7 @@ function CoursesPage() {
 
       <div>
         <h2 className="font-semibold mb-4 text-lg">My learning list</h2>
-        {(!saved || saved.length === 0) ? (
+        {!saved || saved.length === 0 ? (
           <Card className="p-10 text-center text-muted-foreground">
             <BookmarkCheck className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No saved courses yet. Search above to find some!</p>
@@ -232,41 +402,60 @@ function CoursesPage() {
         ) : (
           <div className="space-y-2">
             {saved.map((c) => (
-              <Card key={c.id} className="p-4 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center shrink-0">
-                  {c.status === "completed" ? <CheckCircle2 className="h-5 w-5" /> : c.status === "in_progress" ? <Play className="h-5 w-5" /> : <Bookmark className="h-5 w-5" />}
+              <Card key={c.id} className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center shrink-0">
+                    {c.status === "completed" ? (
+                      <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                    ) : c.status === "in_progress" ? (
+                      <Play className="h-4 w-4 sm:h-5 sm:w-5" />
+                    ) : (
+                      <Bookmark className="h-4 w-4 sm:h-5 sm:w-5" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{c.course_title}</div>
+                    <div className="text-xs text-muted-foreground">{c.source}</div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{c.course_title}</div>
-                  <div className="text-xs text-muted-foreground">{c.source}</div>
-                </div>
-                <Select value={c.status} onValueChange={(v) => updateStatus(c.id, v as any)}>
-                  <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bookmarked">📌 Bookmarked</SelectItem>
-                    <SelectItem value="in_progress">🚀 In Progress</SelectItem>
-                    <SelectItem value="completed">✅ Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-                {c.course_url && (
-                  <Button variant="ghost" size="icon" asChild>
-                    <a href={c.course_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a>
+                <div className="flex items-center gap-2 mt-2 sm:mt-0 sm:ml-auto pl-10 sm:pl-0">
+                  <Select value={c.status} onValueChange={(v) => updateStatus(c.id, v as any)}>
+                    <SelectTrigger className="w-full sm:w-36 h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bookmarked">📌 Bookmarked</SelectItem>
+                      <SelectItem value="in_progress">🚀 In Progress</SelectItem>
+                      <SelectItem value="completed">✅ Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {c.course_url && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                      <a href={c.course_url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => remove(c.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
-                )}
-                <Button variant="ghost" size="icon" onClick={() => remove(c.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                </div>
               </Card>
             ))}
           </div>
         )}
       </div>
-      
-      <NotesModal 
-        isOpen={!!selectedVideo} 
-        onClose={() => setSelectedVideo(null)} 
-        videoUrl={selectedVideo?.url || ""} 
-        videoTitle={selectedVideo?.title || ""} 
+
+      <NotesModal
+        isOpen={!!selectedVideo}
+        onClose={() => setSelectedVideo(null)}
+        videoUrl={selectedVideo?.url || ""}
+        videoTitle={selectedVideo?.title || ""}
       />
     </div>
   );

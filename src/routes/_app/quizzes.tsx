@@ -9,9 +9,25 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/AppShell";
-import { Brain, Loader2, Sparkles, CheckCircle2, XCircle, RotateCcw, Trophy, Network, Send } from "lucide-react";
+import {
+  Brain,
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  RotateCcw,
+  Trophy,
+  Network,
+  Send,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -29,13 +45,18 @@ function QuizPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
 
-
   const [mode, setMode] = useState<Mode>("standard");
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("intermediate");
   const [count, setCount] = useState("5");
 
-  const [quiz, setQuiz] = useState<{ id?: string; topic: string; questions?: Question[]; observation?: string; mode: Mode } | null>(null);
+  const [quiz, setQuiz] = useState<{
+    id?: string;
+    topic: string;
+    questions?: Question[];
+    observation?: string;
+    mode: Mode;
+  } | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [textAnswer, setTextAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -45,7 +66,24 @@ function QuizPage() {
     queryKey: ["quiz-history", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase.from("quiz_attempts").select("*, quizzes(topic,difficulty)").order("created_at", { ascending: false }).limit(10);
+      const { data } = await supabase
+        .from("quiz_attempts")
+        .select("*, quizzes(topic,difficulty)")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      return data ?? [];
+    },
+  });
+
+  const { data: savedCourses } = useQuery({
+    queryKey: ["saved-courses", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("course_progress")
+        .select("course_title")
+        .order("created_at", { ascending: false })
+        .limit(4);
       return data ?? [];
     },
   });
@@ -53,7 +91,11 @@ function QuizPage() {
   const generate = useMutation({
     mutationFn: async () => {
       if (mode === "standard") {
-        return aiGenerateQuiz({ topic: topic.trim(), difficulty: difficulty as any, count: parseInt(count, 10) });
+        return aiGenerateQuiz({
+          topic: topic.trim(),
+          difficulty: difficulty as any,
+          count: parseInt(count, 10),
+        });
       } else {
         const resp = await fetch(`${KG_API_BASE}/reset`, { method: "POST" });
         if (!resp.ok) throw new Error("Knowledge Graph Engine failed to reset");
@@ -62,12 +104,25 @@ function QuizPage() {
     },
     onSuccess: async (r) => {
       if (mode === "standard") {
-        if (!r.questions?.length) { toast.error("Couldn't generate questions, try a different topic."); return; }
+        if (!r.questions?.length) {
+          toast.error("Couldn't generate questions, try a different topic.");
+          return;
+        }
         if (user) {
-          const { data, error } = await supabase.from("quizzes").insert({
-            user_id: user.id, topic: topic.trim(), difficulty, questions: r.questions as any,
-          }).select().single();
-          if (error) { toast.error(error.message); return; }
+          const { data, error } = await supabase
+            .from("quizzes")
+            .insert({
+              user_id: user.id,
+              topic: topic.trim(),
+              difficulty,
+              questions: r.questions as any,
+            })
+            .select()
+            .single();
+          if (error) {
+            toast.error(error.message);
+            return;
+          }
           setQuiz({ id: data.id, topic: topic.trim(), questions: r.questions, mode: "standard" });
         } else {
           setQuiz({ topic: topic.trim(), questions: r.questions, mode: "standard" });
@@ -76,10 +131,24 @@ function QuizPage() {
         const kgTopic = "Knowledge Graph Reasoning";
         if (user) {
           let kgQuizId = "";
-          const { data: existing } = await supabase.from("quizzes").select("id").eq("user_id", user.id).eq("topic", kgTopic).maybeSingle();
+          const { data: existing } = await supabase
+            .from("quizzes")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("topic", kgTopic)
+            .maybeSingle();
           if (existing) kgQuizId = existing.id;
           else {
-            const { data: created } = await supabase.from("quizzes").insert({ user_id: user.id, topic: kgTopic, difficulty: "dynamic", questions: [] as any }).select("id").single();
+            const { data: created } = await supabase
+              .from("quizzes")
+              .insert({
+                user_id: user.id,
+                topic: kgTopic,
+                difficulty: "dynamic",
+                questions: [] as any,
+              })
+              .select("id")
+              .single();
             if (created) kgQuizId = created.id;
           }
           setQuiz({ id: kgQuizId, topic: kgTopic, observation: r.observation, mode: "logic" });
@@ -97,7 +166,10 @@ function QuizPage() {
 
   async function submitStandard() {
     if (!quiz?.questions) return;
-    const s = quiz.questions.reduce((acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0), 0);
+    const s = quiz.questions.reduce(
+      (acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0),
+      0,
+    );
     const total = quiz.questions.length;
     const pct = Math.round((s / total) * 100);
     setScore(pct);
@@ -105,7 +177,11 @@ function QuizPage() {
 
     if (user && quiz.id) {
       const { error } = await supabase.from("quiz_attempts").insert({
-        quiz_id: quiz.id, user_id: user.id, score: s, total, answers: answers as any,
+        quiz_id: quiz.id,
+        user_id: user.id,
+        score: s,
+        total,
+        answers: answers as any,
       });
       if (error) toast.error(error.message);
       else qc.invalidateQueries({ queryKey: ["quiz-history"] });
@@ -132,8 +208,22 @@ function QuizPage() {
           quiz_id: quiz.id,
           score: finalScore,
           total: 100,
-          answers: { observation: quiz.observation, answer: textAnswer, feedback: data.feedback } as any,
+          answers: {
+            observation: quiz.observation,
+            answer: textAnswer,
+            feedback: data.feedback,
+          } as any,
         });
+        
+        await supabase.from("knowledge_graph").insert({
+          user_id: user.id,
+          concept: "Logic Reasoning Challenge",
+          content: `Observation: ${quiz.observation}\nAnswer: ${textAnswer}\nFeedback: ${data.feedback}`,
+          source: 'quiz',
+          confidence: finalScore,
+          category: 'general'
+        });
+
         qc.invalidateQueries({ queryKey: ["quiz-history"] });
         qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       }
@@ -142,37 +232,62 @@ function QuizPage() {
   });
 
   function reset() {
-    setQuiz(null); setAnswers({}); setSubmitted(false); setScore(null); setTopic("");
+    setQuiz(null);
+    setAnswers({});
+    setSubmitted(false);
+    setScore(null);
+    setTopic("");
   }
 
   if (quiz) {
     if (quiz.mode === "standard") {
-      const currentScore = quiz.questions!.reduce((acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0), 0);
+      const currentScore = quiz.questions!.reduce(
+        (acc, q, i) => acc + (answers[i] === q.correct_index ? 1 : 0),
+        0,
+      );
       const allAnswered = Object.keys(answers).length === quiz.questions!.length;
-      const pct = score !== null ? score : Math.round((currentScore / quiz.questions!.length) * 100);
+      const pct =
+        score !== null ? score : Math.round((currentScore / quiz.questions!.length) * 100);
 
       return (
-        <div className="p-6 lg:p-10 max-w-3xl mx-auto">
+        <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto">
           <PageHeader
             icon={Brain}
             title={quiz.topic}
             description={`${quiz.questions!.length} questions • ${difficulty}`}
-            action={<Button variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-2" /> New quiz</Button>}
+            action={
+              <Button variant="outline" onClick={reset}>
+                <RotateCcw className="h-4 w-4 mr-2" /> New quiz
+              </Button>
+            }
           />
 
           {submitted && (
             <Card className="p-6 mb-6 bg-gradient-card border-primary/20">
               <div className="flex items-center gap-4">
-                <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-bold shrink-0",
-                  pct >= 80 ? "bg-success/20 text-success" : pct >= 50 ? "bg-warning/20 text-warning" : "bg-destructive/20 text-destructive")}>
+                <div
+                  className={cn(
+                    "h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-bold shrink-0",
+                    pct >= 80
+                      ? "bg-success/20 text-success"
+                      : pct >= 50
+                        ? "bg-warning/20 text-warning"
+                        : "bg-destructive/20 text-destructive",
+                  )}
+                >
                   {pct}%
                 </div>
                 <div>
                   <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-warning" /> {currentScore}/{quiz.questions!.length} correct
+                    <Trophy className="h-5 w-5 text-warning" /> {currentScore}/
+                    {quiz.questions!.length} correct
                   </h3>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {pct >= 80 ? "Excellent work! 🎉" : pct >= 50 ? "Good effort — review the explanations." : "Keep practicing — you've got this!"}
+                    {pct >= 80
+                      ? "Excellent work! 🎉"
+                      : pct >= 50
+                        ? "Good effort — review the explanations."
+                        : "Keep practicing — you've got this!"}
                   </p>
                 </div>
               </div>
@@ -201,17 +316,36 @@ function QuizPage() {
                           !showResult && selected && "border-primary bg-primary-soft",
                           !showResult && !selected && "border-border hover:border-primary/40",
                           showResult && correct && "border-success bg-success/10",
-                          showResult && selected && !correct && "border-destructive bg-destructive/10",
+                          showResult &&
+                            selected &&
+                            !correct &&
+                            "border-destructive bg-destructive/10",
                           showResult && !selected && !correct && "border-border opacity-60",
                         )}
                       >
-                        <span className={cn("h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs shrink-0",
-                          !showResult && selected && "border-primary bg-primary text-primary-foreground",
-                          !showResult && !selected && "border-muted-foreground/30",
-                          showResult && correct && "border-success bg-success text-success-foreground",
-                          showResult && selected && !correct && "border-destructive bg-destructive text-destructive-foreground",
-                        )}>
-                          {showResult && correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : showResult && selected ? <XCircle className="h-3.5 w-3.5" /> : String.fromCharCode(65 + oi)}
+                        <span
+                          className={cn(
+                            "h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs shrink-0",
+                            !showResult &&
+                              selected &&
+                              "border-primary bg-primary text-primary-foreground",
+                            !showResult && !selected && "border-muted-foreground/30",
+                            showResult &&
+                              correct &&
+                              "border-success bg-success text-success-foreground",
+                            showResult &&
+                              selected &&
+                              !correct &&
+                              "border-destructive bg-destructive text-destructive-foreground",
+                          )}
+                        >
+                          {showResult && correct ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : showResult && selected ? (
+                            <XCircle className="h-3.5 w-3.5" />
+                          ) : (
+                            String.fromCharCode(65 + oi)
+                          )}
                         </span>
                         <span className="flex-1">{opt}</span>
                       </button>
@@ -220,7 +354,8 @@ function QuizPage() {
                 </div>
                 {submitted && (
                   <div className="mt-3 p-3 rounded-lg bg-secondary/50 text-sm">
-                    <span className="font-semibold">Explanation: </span>{q.explanation}
+                    <span className="font-semibold">Explanation: </span>
+                    {q.explanation}
                   </div>
                 )}
               </Card>
@@ -229,7 +364,11 @@ function QuizPage() {
 
           {!submitted && (
             <div className="mt-6 sticky bottom-4">
-              <Button onClick={submitStandard} disabled={!allAnswered} className="w-full h-12 shadow-glow">
+              <Button
+                onClick={submitStandard}
+                disabled={!allAnswered}
+                className="w-full h-12 shadow-glow"
+              >
                 Submit ({Object.keys(answers).length}/{quiz.questions!.length})
               </Button>
             </div>
@@ -238,28 +377,48 @@ function QuizPage() {
       );
     } else {
       return (
-        <div className="p-6 lg:p-10 max-w-3xl mx-auto">
+        <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto">
           <PageHeader
             icon={Network}
             title="Logic Reasoning Quiz"
             description="Powered by the Knowledge Graph Engine"
-            action={<Button variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-2" /> New quiz</Button>}
+            action={
+              <Button variant="outline" onClick={reset}>
+                <RotateCcw className="h-4 w-4 mr-2" /> New quiz
+              </Button>
+            }
           />
 
           <Card className="p-6 border-primary/20 bg-primary-soft/30 mb-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">Scenario Observation</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">
+              Scenario Observation
+            </h3>
             <div className="text-lg leading-relaxed whitespace-pre-wrap">{quiz.observation}</div>
           </Card>
 
           {submitted ? (
             <Card className="p-10 text-center">
-              <div className={cn("h-24 w-24 rounded-full flex items-center justify-center text-4xl font-bold mx-auto mb-6 border-4",
-                score! >= 70 ? "bg-success/10 text-success border-success/30" : score! >= 40 ? "bg-warning/10 text-warning border-warning/30" : "bg-destructive/10 text-destructive border-destructive/30")}>
+              <div
+                className={cn(
+                  "h-24 w-24 rounded-full flex items-center justify-center text-4xl font-bold mx-auto mb-6 border-4",
+                  score! >= 70
+                    ? "bg-success/10 text-success border-success/30"
+                    : score! >= 40
+                      ? "bg-warning/10 text-warning border-warning/30"
+                      : "bg-destructive/10 text-destructive border-destructive/30",
+                )}
+              >
                 {score}%
               </div>
-              <h3 className="text-2xl font-bold mb-2">{score! >= 70 ? "Mastermind!" : "Good effort"}</h3>
-              <p className="text-muted-foreground mb-6">Your reasoning has been analyzed by the Knowledge Graph engine.</p>
-              <Button onClick={reset}><Sparkles className="h-4 w-4 mr-2" /> Next Challenge</Button>
+              <h3 className="text-2xl font-bold mb-2">
+                {score! >= 70 ? "Mastermind!" : "Good effort"}
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Your reasoning has been analyzed by the Knowledge Graph engine.
+              </p>
+              <Button onClick={reset}>
+                <Sparkles className="h-4 w-4 mr-2" /> Next Challenge
+              </Button>
             </Card>
           ) : (
             <Card className="p-6">
@@ -275,7 +434,11 @@ function QuizPage() {
                 disabled={!textAnswer.trim() || submitLogic.isPending}
                 className="w-full h-12"
               >
-                {submitLogic.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                {submitLogic.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
                 Submit for Logic Grading
               </Button>
             </Card>
@@ -285,8 +448,9 @@ function QuizPage() {
     }
   }
 
+
   return (
-    <div className="p-6 lg:p-10 max-w-4xl mx-auto">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto">
       <PageHeader
         icon={Brain}
         title="AI Quiz Generator"
@@ -296,26 +460,38 @@ function QuizPage() {
       <div className="grid md:grid-cols-2 gap-4 mb-8">
         <button
           onClick={() => setMode("standard")}
-          className={cn("p-6 rounded-2xl border-2 transition-all text-left group",
-            mode === "standard" ? "border-primary bg-primary-soft/50 shadow-soft" : "border-border hover:border-primary/40 bg-card")}
+          className={cn(
+            "p-6 rounded-2xl border-2 transition-all text-left group",
+            mode === "standard"
+              ? "border-primary bg-primary-soft/50 shadow-soft"
+              : "border-border hover:border-primary/40 bg-card",
+          )}
         >
           <div className="h-10 w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <Sparkles className="h-5 w-5" />
           </div>
           <h3 className="font-bold text-lg">Multiple Choice</h3>
-          <p className="text-sm text-muted-foreground mt-1">AI-generated questions on any specific topic.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            AI-generated questions on any specific topic.
+          </p>
         </button>
 
         <button
           onClick={() => setMode("logic")}
-          className={cn("p-6 rounded-2xl border-2 transition-all text-left group",
-            mode === "logic" ? "border-primary bg-primary-soft/50 shadow-soft" : "border-border hover:border-primary/40 bg-card")}
+          className={cn(
+            "p-6 rounded-2xl border-2 transition-all text-left group",
+            mode === "logic"
+              ? "border-primary bg-primary-soft/50 shadow-soft"
+              : "border-border hover:border-primary/40 bg-card",
+          )}
         >
           <div className="h-10 w-10 rounded-lg bg-primary-soft text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <Network className="h-5 w-5" />
           </div>
           <h3 className="font-bold text-lg">Logic Reasoning</h3>
-          <p className="text-sm text-muted-foreground mt-1">Dynamic reasoning tasks from the KG engine.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Dynamic reasoning tasks from the KG engine.
+          </p>
         </button>
       </div>
 
@@ -329,20 +505,43 @@ function QuizPage() {
                 placeholder="What do you want to be quizzed on?"
                 className="h-11"
               />
+              
+              {savedCourses && savedCourses.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs text-muted-foreground font-medium">From Saved Courses:</span>
+                  {savedCourses.map((c: any, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setTopic(c.course_title)}
+                      className="text-xs px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors max-w-[200px] truncate"
+                      title={c.course_title}
+                    >
+                      {c.course_title}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
-                  <SelectTrigger className="h-11 flex-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="beginner"> Beginner</SelectItem>
                     <SelectItem value="intermediate"> Intermediate</SelectItem>
                     <SelectItem value="advanced"> Advanced</SelectItem>
-
                   </SelectContent>
                 </Select>
                 <Select value={count} onValueChange={setCount}>
-                  <SelectTrigger className="h-11 flex-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {[3, 5, 8, 10, 15].map(n => <SelectItem key={n} value={String(n)}>{n} questions</SelectItem>)}
+                    {[3, 5, 8, 10, 15].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} questions
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button
@@ -350,7 +549,11 @@ function QuizPage() {
                   disabled={topic.trim().length < 2 || generate.isPending}
                   className="h-11 px-8 shadow-glow"
                 >
-                  {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                  {generate.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
                   Generate Quiz
                 </Button>
               </div>
@@ -358,8 +561,8 @@ function QuizPage() {
           ) : (
             <div className="flex flex-col items-center py-4 text-center">
               <p className="text-sm text-muted-foreground mb-6 max-w-md">
-                The Logic Reasoning mode generates a dynamic scenario from a knowledge graph.
-                You will need to explain the solution using logic and reasoning.
+                The Logic Reasoning mode generates a dynamic scenario from a knowledge graph. You
+                will need to explain the solution using logic and reasoning.
               </p>
               <Button
                 size="lg"
@@ -367,7 +570,11 @@ function QuizPage() {
                 disabled={generate.isPending}
                 className="h-12 px-10 shadow-glow"
               >
-                {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Network className="h-4 w-4 mr-2" />}
+                {generate.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Network className="h-4 w-4 mr-2" />
+                )}
                 Start Logic Challenge
               </Button>
             </div>
@@ -377,7 +584,7 @@ function QuizPage() {
 
       <div>
         <h2 className="font-semibold mb-3 text-lg">Recent attempts</h2>
-        {(!history || history.length === 0) ? (
+        {!history || history.length === 0 ? (
           <Card className="p-10 text-center text-muted-foreground">
             <Brain className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No quiz history yet.</p>
@@ -389,17 +596,36 @@ function QuizPage() {
               const isKG = h.quizzes?.topic === "Knowledge Graph Reasoning";
               return (
                 <Card key={h.id} className="p-4 flex items-center gap-3">
-                  <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
-                    isKG ? "bg-primary-soft text-primary" : "bg-secondary text-muted-foreground")}>
+                  <div
+                    className={cn(
+                      "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
+                      isKG ? "bg-primary-soft text-primary" : "bg-secondary text-muted-foreground",
+                    )}
+                  >
                     {isKG ? <Network className="h-5 w-5" /> : <Brain className="h-5 w-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{h.quizzes?.topic || "Quiz"}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()} • {h.quizzes?.difficulty}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(h.created_at).toLocaleString()} • {h.quizzes?.difficulty}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-bold">{h.score}/{h.total}</div>
-                    <div className={cn("text-xs", pct >= 70 ? "text-success" : pct >= 50 ? "text-warning" : "text-destructive")}>{pct}%</div>
+                    <div className="font-bold">
+                      {h.score}/{h.total}
+                    </div>
+                    <div
+                      className={cn(
+                        "text-xs",
+                        pct >= 70
+                          ? "text-success"
+                          : pct >= 50
+                            ? "text-warning"
+                            : "text-destructive",
+                      )}
+                    >
+                      {pct}%
+                    </div>
                   </div>
                 </Card>
               );

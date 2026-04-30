@@ -2,24 +2,65 @@ import { useRef, useEffect, useCallback, useState } from "react";
 
 // ─── Symbols that get "sucked" into the black hole ─────────────────────
 const MATH_SYMBOLS = [
-  "∑", "∫", "π", "∞", "√", "Δ", "θ", "λ", "α", "β", "γ", "σ", "μ",
-  "∂", "∇", "⊕", "⊗", "≈", "≠", "≤", "≥", "∈", "∉", "⊂", "∪", "∩",
+  "∑",
+  "∫",
+  "π",
+  "∞",
+  "√",
+  "Δ",
+  "θ",
+  "λ",
+  "α",
+  "β",
+  "γ",
+  "σ",
+  "μ",
+  "∂",
+  "∇",
+  "⊕",
+  "⊗",
+  "≈",
+  "≠",
+  "≤",
+  "≥",
+  "∈",
+  "∉",
+  "⊂",
+  "∪",
+  "∩",
 ];
 const CODE_SYMBOLS = [
-  "</>", "{}", "=>", "&&", "||", "!=", "++", "--", "//", "**",
-  "fn()", "let", "var", "if", "for", "map", "0x", "[]", "()",
+  "</>",
+  "{}",
+  "=>",
+  "&&",
+  "||",
+  "!=",
+  "++",
+  "--",
+  "//",
+  "**",
+  "fn()",
+  "let",
+  "var",
+  "if",
+  "for",
+  "map",
+  "0x",
+  "[]",
+  "()",
 ];
 const CHART_SYMBOLS = ["◔", "◑", "◕", "●", "◐", "◒", "◓", "◴", "◵", "◶", "◷"];
 const ALL_SYMBOLS = [...MATH_SYMBOLS, ...CODE_SYMBOLS, ...CHART_SYMBOLS];
 
 // ─── Colour palette that blends with the professional theme ────────────
 const COLORS = [
-  "rgba(88, 60, 200, ",   // primary purple
-  "rgba(100, 80, 220, ",  // violet
-  "rgba(60, 130, 220, ",  // blue
-  "rgba(70, 160, 200, ",  // teal-blue
-  "rgba(120, 80, 200, ",  // soft purple
-  "rgba(50, 110, 190, ",  // deep blue
+  "rgba(88, 60, 200, ", // primary purple
+  "rgba(100, 80, 220, ", // violet
+  "rgba(60, 130, 220, ", // blue
+  "rgba(70, 160, 200, ", // teal-blue
+  "rgba(120, 80, 200, ", // soft purple
+  "rgba(50, 110, 190, ", // deep blue
   "rgba(140, 100, 230, ", // lavender
 ];
 

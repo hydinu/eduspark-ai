@@ -14,12 +14,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
-from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes
+from web_scraper import search_duckduckgo, extract_page_content, generate_web_notes, search_courses, search_youtube_videos
+from dotenv import load_dotenv
 
 # Try to import Supabase, but make it optional
 try:
-    from supabase import create_client
-    Client = None
+    from supabase import create_client, Client
     HAS_SUPABASE = True
 except ImportError:
     HAS_SUPABASE = False
@@ -499,52 +499,59 @@ def delete_course(
 
 @app.get("/api/search-videos")
 def search_videos(topic: str = Query(..., min_length=1), max_results: int = Query(default=10, le=25)):
-    search_url = "https://www.googleapis.com/youtube/v3/search"
-    r = requests.get(search_url, params={
-        "part": "snippet", "q": f"{topic} tutorial educational",
-        "type": "video", "maxResults": max_results, "order": "relevance",
-        "safeSearch": "strict", "key": YOUTUBE_API_KEY,
-    }, timeout=10)
-    if not r.ok:
-        raise HTTPException(status_code=r.status_code, detail=f"YouTube API error: {r.text[:200]}")
-    search_data = r.json()
-    if not search_data.get("items"):
-        return {"topic": topic, "videos": [], "source": "youtube-api"}
+    # ── Strategy 1: YouTube Data API (requires VITE_YOUTUBE_API_KEY) ──────────
+    if YOUTUBE_API_KEY:
+        try:
+            search_url = "https://www.googleapis.com/youtube/v3/search"
+            r = requests.get(search_url, params={
+                "part": "snippet", "q": f"{topic} tutorial educational",
+                "type": "video", "maxResults": max_results, "order": "relevance",
+                "safeSearch": "strict", "key": YOUTUBE_API_KEY,
+            }, timeout=10)
+            if r.ok:
+                search_data = r.json()
+                if search_data.get("items"):
+                    video_ids = ",".join(item["id"]["videoId"] for item in search_data["items"])
+                    detail_r = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
+                        "part": "snippet,contentDetails,statistics", "id": video_ids, "key": YOUTUBE_API_KEY,
+                    }, timeout=10)
+                    if detail_r.ok:
+                        videos = []
+                        for item in detail_r.json().get("items", []):
+                            snippet = item["snippet"]
+                            stats = item.get("statistics", {})
+                            dur_iso = item.get("contentDetails", {}).get("duration", "")
+                            dm = re.match(r"PT(\d+H)?(\d+M)?(\d+S)?", dur_iso)
+                            if dm:
+                                h = int((dm.group(1) or "0H")[:-1])
+                                m = int((dm.group(2) or "0M")[:-1])
+                                s = int((dm.group(3) or "0S")[:-1])
+                                duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+                            else:
+                                duration = ""
+                            video_id = item["id"]
+                            videos.append({
+                                "title": snippet["title"],
+                                "video_id": video_id,
+                                "link": f"https://youtube.com/watch?v={video_id}",
+                                "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
+                                "channel": snippet.get("channelTitle", ""),
+                                "published_at": snippet.get("publishedAt", ""),
+                                "view_count": int(stats.get("viewCount", 0)),
+                                "duration": duration,
+                                "description": snippet.get("description", "")[:400],
+                                "has_transcript": True,
+                            })
+                        if videos:
+                            return {"topic": topic, "videos": videos, "source": "youtube-api"}
+            print(f"[videos] YouTube API returned {r.status_code}, falling back to DuckDuckGo scrape")
+        except Exception as e:
+            print(f"[videos] YouTube API error: {e}, falling back to DuckDuckGo scrape")
 
-    video_ids = ",".join(item["id"]["videoId"] for item in search_data["items"])
-    detail_r = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
-        "part": "snippet,contentDetails,statistics", "id": video_ids, "key": YOUTUBE_API_KEY,
-    }, timeout=10)
-    if not detail_r.ok:
-        raise HTTPException(status_code=detail_r.status_code, detail="Failed to fetch video details")
-
-    videos = []
-    for item in detail_r.json().get("items", []):
-        snippet = item["snippet"]
-        stats = item.get("statistics", {})
-        dur_iso = item.get("contentDetails", {}).get("duration", "")
-        dm = re.match(r"PT(\d+H)?(\d+M)?(\d+S)?", dur_iso)
-        if dm:
-            h = int((dm.group(1) or "0H")[:-1])
-            m = int((dm.group(2) or "0M")[:-1])
-            s = int((dm.group(3) or "0S")[:-1])
-            duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
-        else:
-            duration = ""
-        video_id = item["id"]
-        videos.append({
-            "title": snippet["title"],
-            "video_id": video_id,
-            "link": f"https://youtube.com/watch?v={video_id}",
-            "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
-            "channel": snippet.get("channelTitle", ""),
-            "published_at": snippet.get("publishedAt", ""),
-            "view_count": int(stats.get("viewCount", 0)),
-            "duration": duration,
-            "description": snippet.get("description", "")[:400],
-            "has_transcript": True,  # checked lazily on demand
-        })
-    return {"topic": topic, "videos": videos, "source": "youtube-api"}
+    # ── Strategy 2: DuckDuckGo scrape (no API key needed) ────────────────────
+    print(f"[videos] Using DuckDuckGo scrape for: {topic}")
+    videos = search_youtube_videos(topic, num_results=max_results)
+    return {"topic": topic, "videos": videos, "source": "duckduckgo-scrape"}
 
 
 class NotesRequest(BaseModel):
@@ -627,13 +634,22 @@ def web_resources(topic: str = Query(..., min_length=1)):
     return {"topic": topic, "resources": results}
 
 
+@app.get("/api/course-suggestions")
+def course_suggestions(topic: str = Query(..., min_length=1)):
+    """
+    Search DuckDuckGo for full online courses about a topic.
+    """
+    results = search_courses(topic, num_results=6)
+    return {"topic": topic, "courses": results}
+
+
 class WebNotesRequest(BaseModel):
     url: str
     title: str = ""
 
 
 @app.post("/api/web-page-notes")
-def web_page_notes(body: WebNotesRequest):
+async def web_page_notes(body: WebNotesRequest):
     """
     1. Use Playwright to fetch full rendered content from the URL.
     2. Use Groq Llama 3 to generate structured timestamped notes.
@@ -644,7 +660,7 @@ def web_page_notes(body: WebNotesRequest):
 
     # Step 1: Extract content
     print(f"[web] Extracting content from: {body.url}")
-    content = extract_page_content(body.url)
+    content = await extract_page_content(body.url)
 
     if not content or len(content.strip()) < 100:
         raise HTTPException(

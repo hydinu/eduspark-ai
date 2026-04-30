@@ -6,6 +6,6 @@ supabase
 requests
 python-dotenv
 duckduckgo-search
-# playwright removed for Vercel compatibility
+playwright
 beautifulsoup4
 lxml
