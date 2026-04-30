@@ -75,6 +75,19 @@ function QuizPage() {
     },
   });
 
+  const { data: savedCourses } = useQuery({
+    queryKey: ["saved-courses", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("course_progress")
+        .select("course_title")
+        .order("created_at", { ascending: false })
+        .limit(4);
+      return data ?? [];
+    },
+  });
+
   const generate = useMutation({
     mutationFn: async () => {
       if (mode === "standard") {
@@ -201,6 +214,16 @@ function QuizPage() {
             feedback: data.feedback,
           } as any,
         });
+        
+        await supabase.from("knowledge_graph").insert({
+          user_id: user.id,
+          concept: "Logic Reasoning Challenge",
+          content: `Observation: ${quiz.observation}\nAnswer: ${textAnswer}\nFeedback: ${data.feedback}`,
+          source: 'quiz',
+          confidence: finalScore,
+          category: 'general'
+        });
+
         qc.invalidateQueries({ queryKey: ["quiz-history"] });
         qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       }
@@ -425,6 +448,7 @@ function QuizPage() {
     }
   }
 
+
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto">
       <PageHeader
@@ -481,6 +505,22 @@ function QuizPage() {
                 placeholder="What do you want to be quizzed on?"
                 className="h-11"
               />
+              
+              {savedCourses && savedCourses.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs text-muted-foreground font-medium">From Saved Courses:</span>
+                  {savedCourses.map((c: any, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setTopic(c.course_title)}
+                      className="text-xs px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors max-w-[200px] truncate"
+                      title={c.course_title}
+                    >
+                      {c.course_title}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
                   <SelectTrigger className="h-11 flex-1">

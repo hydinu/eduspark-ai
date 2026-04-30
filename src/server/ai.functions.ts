@@ -4,13 +4,34 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const KG_BASE_URL = "https://outstandingom-knowledge-graph-env.hf.space";
 
-async function callAI(body: Record<string, unknown>) {
+const HF_URL = "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions";
+
+async function callAI(body: Record<string, unknown>, forceProvider?: "huggingface") {
+  const hfToken = import.meta.env.VITE_HF_TOKEN;
   const geminiKey =
     import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyD2r5Yte8rMRdA-AwACq6MQ-yntnF3Ww_I";
   const groqKey =
     import.meta.env.VITE_GROQ_API_KEY || "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";
 
-  if (groqKey) {
+  if (forceProvider === "huggingface" && hfToken) {
+    try {
+      const hfBody = {
+        ...body,
+        model: "meta-llama/Meta-Llama-3-8B-Instruct",
+      };
+      const res = await fetch(HF_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${hfToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(hfBody),
+      });
+      if (res.ok) return res.json();
+      console.warn("Hugging Face returned", res.status, await res.text());
+    } catch (e) {
+      console.warn("Hugging Face failed:", e);
+    }
+  }
+
+  if (groqKey && forceProvider !== "huggingface") {
     try {
       const groqBody = {
         ...body,
@@ -28,7 +49,7 @@ async function callAI(body: Record<string, unknown>) {
     }
   }
 
-  if (geminiKey) {
+  if (geminiKey && forceProvider !== "huggingface") {
     const geminiBody = { ...body, model: "gemini-1.5-flash" };
     const res = await fetch(GEMINI_URL, {
       method: "POST",
@@ -114,7 +135,7 @@ export async function aiChat(data: { messages: { role: string; content: string }
         },
       },
     ],
-  });
+  }, "huggingface");
 
   const msg = result?.choices?.[0]?.message;
   if (msg?.tool_calls?.[0]) {

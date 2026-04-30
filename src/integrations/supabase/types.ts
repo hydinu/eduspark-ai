@@ -288,6 +288,84 @@ export type Database = {
         };
         Relationships: [];
       };
+      knowledge_graph: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          concept: string;
+          content: string;
+          source: string | null;
+          category: string | null;
+          tags: string[] | null;
+          confidence: number | null;
+          access_count: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          concept: string;
+          content: string;
+          source?: string | null;
+          category?: string | null;
+          tags?: string[] | null;
+          confidence?: number | null;
+          access_count?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          concept?: string;
+          content?: string;
+          source?: string | null;
+          category?: string | null;
+          tags?: string[] | null;
+          confidence?: number | null;
+          access_count?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      learning_history: {
+        Row: {
+          id: string;
+          user_id: string;
+          activity_type: string;
+          topic: string;
+          summary: string | null;
+          score: number | null;
+          skills_practiced: string[] | null;
+          weak_areas: string[] | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          activity_type: string;
+          topic: string;
+          summary?: string | null;
+          score?: number | null;
+          skills_practiced?: string[] | null;
+          weak_areas?: string[] | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          activity_type?: string;
+          topic?: string;
+          summary?: string | null;
+          score?: number | null;
+          skills_practiced?: string[] | null;
+          weak_areas?: string[] | null;
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
